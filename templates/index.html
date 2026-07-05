@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acoustic Neighbor Graph</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --query-node: #ef4444;
+            --neighbor-node: #10b981;
+            --edge-color: rgba(148, 163, 184, 0.4);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            padding: 1.5rem;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary);
+        }
+        
+        .n-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        input[type="number"] {
+            width: 60px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: var(--primary-hover);
+        }
+
+        #graph-container {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 0.5rem 1rem;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 0.5rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.875rem;
+            z-index: 20;
+            backdrop-filter: blur(4px);
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1rem;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Phonetic Neighbors</h1>
+        <div class="controls">
+            <input type="text" id="word-input" placeholder="Enter a word..." value="HELLO" />
+            <div class="n-input-wrapper">
+                <label for="n-input">Neighbors (n):</label>
+                <input type="number" id="n-input" value="8" min="1" max="50" />
+            </div>
+            <button id="search-btn">Search</button>
+        </div>
+    </header>
+    
+    <div id="graph-container">
+        <svg id="viz"></svg>
+        <div id="loading">
+            <div class="spinner"></div>
+            <div>Computing t-SNE...</div>
+        </div>
+        <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <script>
+        const svg = d3.select("#viz");
+        const tooltip = d3.select("#tooltip");
+        const container = document.getElementById('graph-container');
+        
+        // Define zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+            
+        svg.call(zoom);
+        
+        // Create a main group for zooming
+        const g = svg.append("g");
+        const linkGroup = g.append("g").attr("class", "links");
+        const nodeGroup = g.append("g").attr("class", "nodes");
+        
+        document.getElementById('search-btn').addEventListener('click', performSearch);
+        document.getElementById('word-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+
+        async function performSearch() {
+            const word = document.getElementById('word-input').value.trim();
+            const n = document.getElementById('n-input').value;
+            
+            if (!word) return;
+            
+            document.getElementById('loading').style.display = 'flex';
+            
+            try {
+                const response = await fetch(`/api/search?word=${encodeURIComponent(word)}&n=${n}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    renderGraph(data);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                console.error("Failed to fetch graph data:", error);
+                alert("Failed to connect to the server.");
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        function renderGraph(data) {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            linkGroup.selectAll("*").remove();
+            nodeGroup.selectAll("*").remove();
+            
+            const nodes = data.nodes;
+            const edges = data.edges;
+            
+            // Normalize t-SNE coordinates to fit nicely on screen
+            const xExtent = d3.extent(nodes, d => d.x);
+            const yExtent = d3.extent(nodes, d => d.y);
+            
+            // Add padding
+            const padding = 100;
+            const xScale = d3.scaleLinear()
+                .domain(xExtent)
+                .range([padding, width - padding]);
+                
+            const yScale = d3.scaleLinear()
+                .domain(yExtent)
+                .range([padding, height - padding]);
+                
+            // If only 1 node, put it in center
+            if (nodes.length === 1) {
+                xScale.domain([-1, 1]).range([0, width]);
+                yScale.domain([-1, 1]).range([0, height]);
+            }
+            
+            nodes.forEach(n => {
+                n.px = xScale(n.x);
+                n.py = yScale(n.y);
+            });
+            
+            // Draw edges
+            const maxWeight = d3.max(edges, d => d.weight) || 1;
+            const link = linkGroup.selectAll("line")
+                .data(edges)
+                .join("line")
+                .attr("x1", d => nodes.find(n => n.id === d.source).px)
+                .attr("y1", d => nodes.find(n => n.id === d.source).py)
+                .attr("x2", d => nodes.find(n => n.id === d.target).px)
+                .attr("y2", d => nodes.find(n => n.id === d.target).py)
+                .style("stroke", "var(--edge-color)")
+                .style("stroke-width", d => Math.max(6, (d.weight / maxWeight) * 12)) // Made slightly thicker for easier hovering
+                .style("opacity", d => 0.2 + (d.weight / maxWeight) * 0.8)
+                .style("cursor", "crosshair")
+                .on("mouseover", (event, d) => {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 1);
+                    
+                    const tooltipHtml = `<strong>${d.source} ↔ ${d.target}</strong><br/>Distance: ${d.distance.toFixed(4)}`;
+                    
+                    tooltip.html(tooltipHtml)
+                        .style("left", (event.pageX + 15) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                        
+                    d3.select(event.currentTarget)
+                        .style("stroke", "var(--primary)")
+                        .style("opacity", 1);
+                })
+                .on("mouseout", (event, d) => {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                        
+                    d3.select(event.currentTarget)
+                        .style("stroke", "var(--edge-color)")
+                        .style("opacity", 0.2 + (d.weight / maxWeight) * 0.8);
+                });
+                
+            // Draw nodes
+            const node = nodeGroup.selectAll("g")
+                .data(nodes)
+                .join("g")
+                .attr("transform", d => `translate(${d.px},${d.py})`);
+                
+            node.append("circle")
+                .attr("r", d => d.is_query ? 24 : 16)
+                .style("fill", d => d.is_query ? "var(--query-node)" : "var(--neighbor-node)")
+                .style("stroke", "rgba(255,255,255,0.8)")
+                .style("stroke-width", 2)
+                .style("cursor", "pointer")
+                .on("mouseover", (event, d) => {
+                    d3.select(event.currentTarget)
+                        .transition()
+                        .duration(200)
+                        .attr("r", d.is_query ? 28 : 20);
+                        
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 1);
+                    
+                    let tooltipHtml = `<strong>${d.id}</strong><br/>`;
+                    if (!d.is_query) {
+                        tooltipHtml += `Distance: ${d.dist_to_query.toFixed(3)}`;
+                    } else {
+                        tooltipHtml += `Query Word`;
+                    }
+                    
+                    tooltip.html(tooltipHtml)
+                        .style("left", (event.pageX + 15) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", (event, d) => {
+                    d3.select(event.currentTarget)
+                        .transition()
+                        .duration(200)
+                        .attr("r", d.is_query ? 24 : 16);
+                        
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+                
+            // Add labels
+            node.append("text")
+                .text(d => d.id)
+                .attr("dy", d => d.is_query ? 40 : 30)
+                .attr("text-anchor", "middle")
+                .style("fill", "var(--text-color)")
+                .style("font-size", d => d.is_query ? "14px" : "12px")
+                .style("font-weight", d => d.is_query ? "bold" : "normal")
+                .style("pointer-events", "none")
+                .style("text-shadow", "0px 2px 4px rgba(0,0,0,0.8)");
+                
+            // Auto fit to screen
+            svg.transition().duration(750).call(
+                zoom.transform, 
+                d3.zoomIdentity
+            );
+        }
+        
+        // Initial search to populate graph
+        performSearch();
+    </script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+[submodule "ml-acn-embed"]
+	path = ml-acn-embed
+	url = git@github.com:apple/ml-acn-embed
