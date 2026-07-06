@@ -146,4 +146,16 @@ def api_search():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5001, debug=True)
+    host = "0.0.0.0"
+    port = 5001
+    
+    # Enable debug mode on the app object to detect it during startup
+    app.debug = True
+    
+    # Eagerly initialize backend only in the actual server process (prevent double-loading in reloader)
+    if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        print("Initializing search backend (loading models & embeddings)...")
+        get_backend()
+        print(f" * Server is ready to receive traffic at: https://{host}:{port}")
+        
+    app.run(host=host, port=port, ssl_context="adhoc")

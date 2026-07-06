@@ -93,11 +93,30 @@
             font-size: 1rem;
             font-weight: 500;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: background 0.2s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
         }
 
         button:hover {
             background: var(--primary-hover);
+        }
+
+        button:active {
+            transform: scale(0.97);
+        }
+
+        .secondary-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-color);
+        }
+
+        .secondary-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.4);
         }
 
         #graph-container {
@@ -153,6 +172,113 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(8px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 100;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .modal-content {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 1rem;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
+            transform: scale(0.95) translateY(10px);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            position: relative;
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 0.75rem;
+        }
+
+        .modal-title {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: var(--text-color);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ef4444;
+        }
+
+        .modal-body {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #cbd5e1;
+        }
+
+        .modal-body p {
+            margin-top: 0;
+            margin-bottom: 1rem;
+        }
+
+        .modal-body ul {
+            padding-left: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .modal-body li {
+            margin-bottom: 0.5rem;
+        }
+
+        .modal-body a {
+            color: var(--primary);
+            text-decoration: none;
+            transition: text-decoration 0.2s;
+        }
+
+        .modal-body a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -165,6 +291,10 @@
                 <input type="number" id="n-input" value="8" min="1" max="50" />
             </div>
             <button id="search-btn">Search</button>
+            <button id="about-btn" class="secondary-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                About
+            </button>
         </div>
     </header>
     
@@ -175,6 +305,25 @@
             <div>Computing t-SNE...</div>
         </div>
         <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal-overlay" id="about-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">About Phonetic Neighbors</h2>
+                <button class="modal-close" id="close-modal-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>This web application visualizes the <strong>phonetic/acoustic similarity</strong> between words as an interactive 2D edge-weighted graph.</p>
+                <p><strong>Key Components:</strong></p>
+                <ul>
+                    <li><strong>Acoustic Embeddings:</strong> Utilizes Apple's <a href="https://github.com/apple/ml-acn-embed" target="_blank" rel="noopener noreferrer">Acoustic Neighbor Embeddings (ACN)</a> to map words into a high-dimensional space where similar-sounding words reside closer together.</li>
+                    <li><strong>t-SNE Projection:</strong> Applies t-Distributed Stochastic Neighbor Embedding (t-SNE) to reduce the high-dimensional embeddings into a 2D layout.</li>
+                    <li><strong>Interactive Graph:</strong> Renders query words and their nearest acoustic neighbors using D3.js. Hover over nodes to inspect individual similarity distances.</li>
+                </ul>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -363,6 +512,25 @@
         
         // Initial search to populate graph
         performSearch();
+
+        // About Modal handlers
+        const aboutBtn = document.getElementById('about-btn');
+        const aboutModal = document.getElementById('about-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+
+        aboutBtn.addEventListener('click', () => {
+            aboutModal.classList.add('active');
+        });
+
+        closeModalBtn.addEventListener('click', () => {
+            aboutModal.classList.remove('active');
+        });
+
+        aboutModal.addEventListener('click', (e) => {
+            if (e.target === aboutModal) {
+                aboutModal.classList.remove('active');
+            }
+        });
     </script>
 </body>
 </html>
