@@ -30,6 +30,8 @@ if "use_full_cmudict" not in FLAGS:
     flags.DEFINE_boolean("use_full_cmudict", False, "Use the entire CMUdict instead of the pruned vocabulary.")
 if "embed_type" not in FLAGS:
     flags.DEFINE_enum("embed_type", "phone", ["phone", "grapheme"], "Embedding type to use.")
+if "ignore_homonyms" not in FLAGS:
+    flags.DEFINE_boolean("ignore_homonyms", True, "Ignore homonyms (words with distance exactly 0).")
 
 def load_cmudict(path):
     if not path or not os.path.exists(path):
@@ -145,9 +147,12 @@ def main(argv):
         sys.exit(1)
         
     actual_k = min(FLAGS.num_neighbors, n_words - 1)
-    k = actual_k + 1  # +1 because the word itself is its own closest neighbor
+    k = actual_k if FLAGS.ignore_homonyms else (actual_k + 1)
     
     print(f"Computing nearest neighbors (considering {actual_k} neighbors per word) in batches...")
+    if FLAGS.ignore_homonyms:
+        print("Ignoring all homonyms (distance exactly 0.0) from neighbor search.")
+        
     avg_dists = np.zeros(n_words)
     nearest_1st_dists = np.zeros(n_words)
     
@@ -160,12 +165,16 @@ def main(argv):
         # Pairwise distance from batch to all embeddings
         dists = torch.cdist(batch_embs, embeddings, p=2.0)
         
-        # Sort distances (k smallest values)
-        values, _ = torch.topk(dists, k=k, dim=1, largest=False, sorted=True)
-        
-        # The first column is distance=0.0 (the word itself), so we take columns 1 to k
-        neighbor_dists = values[:, 1:k].cpu().numpy()
-        
+        if FLAGS.ignore_homonyms:
+            # Set all distances < 1e-5 (including self-distance) to a large value so they sort to the end
+            dists = torch.where(dists < 1e-5, torch.tensor(1e9, device=dists.device), dists)
+            values, _ = torch.topk(dists, k=k, dim=1, largest=False, sorted=True)
+            neighbor_dists = values.cpu().numpy()
+        else:
+            values, _ = torch.topk(dists, k=k, dim=1, largest=False, sorted=True)
+            # Exclude column 0 (which is the word itself with distance 0.0)
+            neighbor_dists = values[:, 1:k].cpu().numpy()
+            
         avg_dists[i:end_idx] = np.mean(neighbor_dists, axis=1)
         nearest_1st_dists[i:end_idx] = neighbor_dists[:, 0]
             
