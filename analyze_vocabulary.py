@@ -6,6 +6,13 @@ import numpy as np
 from pathlib import Path
 from absl import app, flags
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    # Safe fallback if tqdm is not installed
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 # Add submodule path to resolve acn_embed
 sys.path.append(os.path.join(os.path.dirname(__file__), "ml-acn-embed", "src"))
 from acn_embed.embed.embedder.text_embedder import TextEmbedder
@@ -132,7 +139,7 @@ def main(argv):
     
     # Process in batches to avoid memory allocation limit
     batch_size = 500
-    for i in range(0, n_words, batch_size):
+    for i in tqdm(range(0, n_words, batch_size), desc="Computing distances"):
         end_idx = min(i + batch_size, n_words)
         batch_embs = embeddings[i:end_idx]
         
@@ -147,9 +154,6 @@ def main(argv):
         
         avg_dists[i:end_idx] = np.mean(neighbor_dists, axis=1)
         nearest_1st_dists[i:end_idx] = neighbor_dists[:, 0]
-        
-        if (i // batch_size) % 10 == 0:
-            print(f"Processed {end_idx:,d} / {n_words:,d} words...")
             
     # Sort results
     sorted_by_density = np.argsort(avg_dists)  # smallest avg distance first
