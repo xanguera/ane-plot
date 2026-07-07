@@ -22,6 +22,10 @@ if "port" not in FLAGS:
     flags.DEFINE_integer("port", 5001, "Port to run the Flask server on.")
 if "embeddings_cache_dir" not in FLAGS:
     flags.DEFINE_string("embeddings_cache_dir", "/tmp", "Directory to cache phonetic embeddings.")
+if "default_embed_type" not in FLAGS:
+    flags.DEFINE_string("default_embed_type", "phone", "Default embedding type to use (phone or grapheme).")
+if "default_neighbors" not in FLAGS:
+    flags.DEFINE_integer("default_neighbors", 8, "Default number of neighbors to display.")
 
 def _prune_by_lm_score(strings, lmscores, embeddings, lm_score_thres):
     use_idx = np.nonzero(lmscores > lm_score_thres)[0]
@@ -139,7 +143,9 @@ class NNSearchBackend:
                 
         print("Backend ready.")
         
-    def search_and_graph(self, query_word: str, num_requested: int, embed_type: str = "grapheme"):
+    def search_and_graph(self, query_word: str, num_requested: int, embed_type: str = None):
+        if embed_type is None:
+            embed_type = FLAGS.default_embed_type
         query_word = query_word.upper()
         
         if embed_type == "phone":
@@ -228,13 +234,17 @@ def get_backend():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        default_embed_type=FLAGS.default_embed_type,
+        default_neighbors=FLAGS.default_neighbors
+    )
 
 @app.route("/api/search")
 def api_search():
     word = request.args.get("word", "").strip()
-    n = request.args.get("n", 8, type=int)
-    embed_type = request.args.get("embed_type", "grapheme").strip()
+    n = request.args.get("n", FLAGS.default_neighbors, type=int)
+    embed_type = request.args.get("embed_type", FLAGS.default_embed_type).strip()
     
     if not word:
         return jsonify({"error": "word parameter is required"}), 400
