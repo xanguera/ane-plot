@@ -20,6 +20,8 @@ if "host" not in FLAGS:
     flags.DEFINE_string("host", "0.0.0.0", "Host interface to bind the Flask server to.")
 if "port" not in FLAGS:
     flags.DEFINE_integer("port", 5001, "Port to run the Flask server on.")
+if "embeddings_cache_dir" not in FLAGS:
+    flags.DEFINE_string("embeddings_cache_dir", "/tmp", "Directory to cache phonetic embeddings.")
 
 def _prune_by_lm_score(strings, lmscores, embeddings, lm_score_thres):
     use_idx = np.nonzero(lmscores > lm_score_thres)[0]
@@ -91,25 +93,50 @@ class NNSearchBackend:
             model_dir=grapheme_embedder_path, text_type="phone", device=device
         )
         
-        print("Computing phonetic embeddings for vocabulary...")
-        valid_phones = list(self.phone_embedder.model.subword_to_idx.keys())
-        fallback_phone = [valid_phones[0]] if valid_phones else ["AH0"]
+        cache_dir = Path(FLAGS.embeddings_cache_dir)
+        cache_path = cache_dir / "phone_embeddings_cache.pt"
         
-        prons = []
-        for word in self.strings:
-            pron = self.cmudict.get(word.upper())
-            if not pron:
-                pron = [c for c in word.upper()]
-            # filter phonemes
-            pron = [ph for ph in pron if ph in self.phone_embedder.model.subword_to_idx]
-            if not pron:
-                pron = fallback_phone
-            prons.append(pron)
+        loaded_from_cache = False
+        if cache_path.exists():
+            try:
+                print(f"Loading phonetic embeddings from cache: {cache_path}...")
+                self.phone_embeddings = torch.load(cache_path, map_location=device, weights_only=True)
+                if self.phone_embeddings.shape[0] == len(self.strings):
+                    loaded_from_cache = True
+                    print("Phonetic embeddings loaded successfully from cache.")
+                else:
+                    print("Warning: Cached phonetic embeddings size mismatch, recomputing...")
+            except Exception as e:
+                print(f"Warning: Failed to load cached embeddings: {e}, recomputing...")
+                
+        if not loaded_from_cache:
+            print("Computing phonetic embeddings for vocabulary...")
+            valid_phones = list(self.phone_embedder.model.subword_to_idx.keys())
+            fallback_phone = [valid_phones[0]] if valid_phones else ["AH0"]
             
-        # Batch embed all vocabulary prons
-        self.phone_embeddings = self.phone_embedder.get_embedding(
-            prons, batch_size=500, log_interval=0
-        ).detach()
+            prons = []
+            for word in self.strings:
+                pron = self.cmudict.get(word.upper())
+                if not pron:
+                    pron = [c for c in word.upper()]
+                # filter phonemes
+                pron = [ph for ph in pron if ph in self.phone_embedder.model.subword_to_idx]
+                if not pron:
+                    pron = fallback_phone
+                prons.append(pron)
+                
+            # Batch embed all vocabulary prons
+            self.phone_embeddings = self.phone_embedder.get_embedding(
+                prons, batch_size=500, log_interval=0
+            ).detach()
+            
+            try:
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                print(f"Caching phonetic embeddings to {cache_path}...")
+                torch.save(self.phone_embeddings, cache_path)
+            except Exception as e:
+                print(f"Warning: Failed to cache phonetic embeddings: {e}")
+                
         print("Backend ready.")
         
     def search_and_graph(self, query_word: str, num_requested: int, embed_type: str = "grapheme"):
