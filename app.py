@@ -26,6 +26,8 @@ if "default_embed_type" not in FLAGS:
     flags.DEFINE_string("default_embed_type", "phone", "Default embedding type to use (phone or grapheme).")
 if "default_neighbors" not in FLAGS:
     flags.DEFINE_integer("default_neighbors", 8, "Default number of neighbors to display.")
+if "ignore_sighup" not in FLAGS:
+    flags.DEFINE_boolean("ignore_sighup", True, "Ignore SIGHUP signal (prevent termination when SSH connection dies).")
 
 def _prune_by_lm_score(strings, lmscores, embeddings, lm_score_thres):
     use_idx = np.nonzero(lmscores > lm_score_thres)[0]
@@ -264,6 +266,12 @@ if __name__ == "__main__":
     
     host = FLAGS.host
     port = FLAGS.port
+    
+    if FLAGS.ignore_sighup:
+        import signal
+        if hasattr(signal, "SIGHUP"):
+            print("Configured to ignore SIGHUP (hangup signal).")
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
     # Enable debug mode on the app object to detect it during startup
     app.debug = True
