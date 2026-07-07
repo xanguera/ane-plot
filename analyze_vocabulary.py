@@ -32,6 +32,8 @@ if "embed_type" not in FLAGS:
     flags.DEFINE_enum("embed_type", "phone", ["phone", "grapheme"], "Embedding type to use.")
 if "ignore_homonyms" not in FLAGS:
     flags.DEFINE_boolean("ignore_homonyms", True, "Ignore homonyms (words with distance exactly 0).")
+if "embedding_dim" not in FLAGS:
+    flags.DEFINE_enum("embedding_dim", "64", ["2", "4", "8", "16", "32", "48", "64", "128", "256", "512", "1024", "2048"], "Embedding dimension size.")
 
 def load_cmudict(path):
     if not path or not os.path.exists(path):
@@ -81,14 +83,14 @@ def main(argv):
         
     # 3. Load or compute embeddings
     cache_dir = Path(FLAGS.embeddings_cache_dir)
-    cache_name = f"full_cmudict_{embed_type}_embeddings.pt" if FLAGS.use_full_cmudict else f"pruned_{embed_type}_embeddings.pt"
+    cache_name = f"full_cmudict_{embed_type}_{FLAGS.embedding_dim}_embeddings.pt" if FLAGS.use_full_cmudict else f"pruned_{embed_type}_{FLAGS.embedding_dim}_embeddings.pt"
     cache_path = cache_dir / cache_name
     
     # Resolve the model directory (expects a Path object pointing to the directory containing model files)
     base_dir = Path(__file__).parent
-    model_dir = base_dir / "model" / "embedder-64"
+    model_dir = base_dir / "model" / f"embedder-{FLAGS.embedding_dim}"
     if not model_dir.exists():
-        model_dir = base_dir / "ml-acn-embed" / "model" / "embedder-64"
+        model_dir = base_dir / "ml-acn-embed" / "model" / f"embedder-{FLAGS.embedding_dim}"
         
     embedder = TextEmbedder(
         model_dir=model_dir, text_type=embed_type, device=device

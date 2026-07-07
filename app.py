@@ -28,6 +28,8 @@ if "default_neighbors" not in FLAGS:
     flags.DEFINE_integer("default_neighbors", 8, "Default number of neighbors to display.")
 if "ignore_sighup" not in FLAGS:
     flags.DEFINE_boolean("ignore_sighup", True, "Ignore SIGHUP signal (prevent termination when SSH connection dies).")
+if "embedding_dim" not in FLAGS:
+    flags.DEFINE_enum("embedding_dim", "64", ["2", "4", "8", "16", "32", "48", "64", "128", "256", "512", "1024", "2048"], "Embedding dimension size.")
 
 def _prune_by_lm_score(strings, lmscores, embeddings, lm_score_thres):
     use_idx = np.nonzero(lmscores > lm_score_thres)[0]
@@ -68,7 +70,7 @@ class NNSearchBackend:
         base_dir = Path(__file__).parent.resolve()
         embeddings_path = base_dir / "wakeword" / "embeddings-3-gram.pruned.1e-7.pt"
         strings_path = base_dir / "wakeword" / "str2score.3-gram.pruned.1e-7.pt"
-        grapheme_embedder_path = base_dir / "model" / "embedder-64"
+        grapheme_embedder_path = base_dir / "model" / f"embedder-{FLAGS.embedding_dim}"
         
         # Load CMUdict
         self.cmudict = load_cmudict(FLAGS.cmudict_path)
@@ -100,7 +102,7 @@ class NNSearchBackend:
         )
         
         cache_dir = Path(FLAGS.embeddings_cache_dir)
-        cache_path = cache_dir / "phone_embeddings_cache.pt"
+        cache_path = cache_dir / f"phone_embeddings_cache_{FLAGS.embedding_dim}.pt"
         
         loaded_from_cache = False
         if cache_path.exists():
