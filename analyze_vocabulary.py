@@ -1,5 +1,6 @@
 import os
 import sys
+# pyrefly: ignore [missing-import]
 import torch
 import numpy as np
 from pathlib import Path
@@ -67,13 +68,14 @@ def main(argv):
     cache_name = "full_cmudict_phone_embeddings.pt" if FLAGS.use_full_cmudict else "pruned_phone_embeddings.pt"
     cache_path = cache_dir / cache_name
     
-    # Load the phone embedder model
-    grapheme_embedder_path = "ml-acn-embed/model/text-phone.pt"
-    if not os.path.exists(grapheme_embedder_path):
-        grapheme_embedder_path = "model/text-phone.pt"
+    # Resolve the model directory (expects a Path object pointing to the directory containing model files)
+    base_dir = Path(__file__).parent
+    model_dir = base_dir / "ml-acn-embed" / "model"
+    if not model_dir.exists():
+        model_dir = base_dir / "model"
         
     phone_embedder = TextEmbedder(
-        model_dir=grapheme_embedder_path, text_type="phone", device=device
+        model_dir=model_dir, text_type="phone", device=device
     )
     
     embeddings = None
