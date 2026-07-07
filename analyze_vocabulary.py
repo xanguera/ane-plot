@@ -70,9 +70,9 @@ def main(argv):
     
     # Resolve the model directory (expects a Path object pointing to the directory containing model files)
     base_dir = Path(__file__).parent
-    model_dir = base_dir / "ml-acn-embed" / "model"
+    model_dir = base_dir / "model" / "embedder-64"
     if not model_dir.exists():
-        model_dir = base_dir / "model"
+        model_dir = base_dir / "ml-acn-embed" / "model" / "embedder-64"
         
     phone_embedder = TextEmbedder(
         model_dir=model_dir, text_type="phone", device=device
