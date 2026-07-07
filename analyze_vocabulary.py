@@ -119,9 +119,14 @@ def main(argv):
     # Move embeddings to target device
     embeddings = embeddings.to(device)
     n_words = len(strings)
-    k = FLAGS.num_neighbors + 1  # +1 because the word itself is its own closest neighbor
+    if n_words <= 1:
+        print("Error: Vocabulary must have at least 2 words to compute neighbors.")
+        sys.exit(1)
+        
+    actual_k = min(FLAGS.num_neighbors, n_words - 1)
+    k = actual_k + 1  # +1 because the word itself is its own closest neighbor
     
-    print("Computing nearest neighbors distances in batches...")
+    print(f"Computing nearest neighbors (considering {actual_k} neighbors per word) in batches...")
     avg_dists = np.zeros(n_words)
     nearest_1st_dists = np.zeros(n_words)
     
@@ -151,26 +156,28 @@ def main(argv):
     sorted_by_isolation = np.argsort(nearest_1st_dists)[::-1]  # largest nearest 1st distance first
     sorted_by_avg_isolation = np.argsort(avg_dists)[::-1]  # largest average distance first
     
+    num_to_display = min(20, n_words)
+    
     print("\n" + "="*80)
-    print(f"TOP 20 WORDS WITH THE SMALLEST AVERAGE DISTANCE TO NEAREST {FLAGS.num_neighbors} WORDS (DENSE REGIONS)")
+    print(f"TOP {num_to_display} WORDS WITH THE SMALLEST AVERAGE DISTANCE TO NEAREST {actual_k} WORDS (DENSE REGIONS)")
     print("="*80)
-    for idx in range(20):
+    for idx in range(num_to_display):
         w_idx = sorted_by_density[idx]
-        print(f"{idx+1:2d}. {strings[w_idx]:<18} (Avg distance to nearest {FLAGS.num_neighbors}: {avg_dists[w_idx]:.4f})")
+        print(f"{idx+1:2d}. {strings[w_idx]:<18} (Avg distance to nearest {actual_k}: {avg_dists[w_idx]:.4f})")
         
     print("\n" + "="*80)
-    print("TOP 20 WORDS WITH THE LARGEST DISTANCE TO THEIR NEAREST NEIGHBOR (ISOLATED OUTLIERS)")
+    print(f"TOP {num_to_display} WORDS WITH THE LARGEST DISTANCE TO THEIR NEAREST NEIGHBOR (ISOLATED OUTLIERS)")
     print("="*80)
-    for idx in range(20):
+    for idx in range(num_to_display):
         w_idx = sorted_by_isolation[idx]
         print(f"{idx+1:2d}. {strings[w_idx]:<18} (Distance to nearest word: {nearest_1st_dists[w_idx]:.4f})")
 
     print("\n" + "="*80)
-    print(f"TOP 20 WORDS WITH THE LARGEST AVERAGE DISTANCE TO NEAREST {FLAGS.num_neighbors} WORDS")
+    print(f"TOP {num_to_display} WORDS WITH THE LARGEST AVERAGE DISTANCE TO NEAREST {actual_k} WORDS")
     print("="*80)
-    for idx in range(20):
+    for idx in range(num_to_display):
         w_idx = sorted_by_avg_isolation[idx]
-        print(f"{idx+1:2d}. {strings[w_idx]:<18} (Avg distance to nearest {FLAGS.num_neighbors}: {avg_dists[w_idx]:.4f})")
+        print(f"{idx+1:2d}. {strings[w_idx]:<18} (Avg distance to nearest {actual_k}: {avg_dists[w_idx]:.4f})")
 
 if __name__ == "__main__":
     app.run(main)
