@@ -84,6 +84,33 @@
             font-size: 1rem;
         }
 
+        .filter-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        select {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 0.5rem 2rem 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            outline: none;
+            cursor: pointer;
+            transition: border-color 0.2s;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.5rem center;
+            background-size: 1em;
+        }
+
+        select:focus {
+            border-color: var(--primary);
+        }
+
         button {
             background: var(--primary);
             color: white;
@@ -290,6 +317,14 @@
                 <label for="n-input">Neighbors (n):</label>
                 <input type="number" id="n-input" value="8" min="1" max="50" />
             </div>
+            <div class="filter-wrapper">
+                <label for="link-filter">Links:</label>
+                <select id="link-filter">
+                    <option value="query" selected>Query only</option>
+                    <option value="all">Full graph</option>
+                    <option value="none">None</option>
+                </select>
+            </div>
             <button id="search-btn">Search</button>
             <button id="about-btn" class="secondary-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
@@ -327,6 +362,7 @@
     </div>
 
     <script>
+        let currentGraphData = null;
         const svg = d3.select("#viz");
         const tooltip = d3.select("#tooltip");
         const container = document.getElementById('graph-container');
@@ -363,6 +399,7 @@
                 const data = await response.json();
                 
                 if (response.ok) {
+                    currentGraphData = data;
                     renderGraph(data);
                 } else {
                     alert('Error: ' + data.error);
@@ -376,6 +413,8 @@
         }
         
         function renderGraph(data) {
+            if (!data) return;
+            
             const width = container.clientWidth;
             const height = container.clientHeight;
             
@@ -383,7 +422,18 @@
             nodeGroup.selectAll("*").remove();
             
             const nodes = data.nodes;
-            const edges = data.edges;
+            
+            // Filter edges based on user selection
+            const filterValue = document.getElementById('link-filter').value;
+            const queryNode = nodes.find(n => n.is_query);
+            const queryId = queryNode ? queryNode.id : null;
+            
+            let edges = data.edges;
+            if (filterValue === 'query') {
+                edges = data.edges.filter(d => d.source === queryId || d.target === queryId);
+            } else if (filterValue === 'none') {
+                edges = [];
+            }
             
             // Normalize t-SNE coordinates to fit nicely on screen
             const xExtent = d3.extent(nodes, d => d.x);
@@ -529,6 +579,13 @@
         aboutModal.addEventListener('click', (e) => {
             if (e.target === aboutModal) {
                 aboutModal.classList.remove('active');
+            }
+        });
+
+        // Re-render graph when the link visibility filter changes
+        document.getElementById('link-filter').addEventListener('change', () => {
+            if (currentGraphData) {
+                renderGraph(currentGraphData);
             }
         });
     </script>
