@@ -28,6 +28,8 @@ if "embeddings_cache_dir" not in FLAGS:
     flags.DEFINE_string("embeddings_cache_dir", "/tmp", "Directory to cache phonetic embeddings.")
 if "use_full_cmudict" not in FLAGS:
     flags.DEFINE_boolean("use_full_cmudict", False, "Use the entire CMUdict instead of the pruned vocabulary.")
+if "embed_type" not in FLAGS:
+    flags.DEFINE_enum("embed_type", "phone", ["phone", "grapheme"], "Embedding type to use.")
 
 def load_cmudict(path):
     if not path or not os.path.exists(path):
@@ -54,8 +56,12 @@ def main(argv):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # 1. Load CMUdict
-    cmudict = load_cmudict(FLAGS.cmudict_path)
+    embed_type = FLAGS.embed_type
+    
+    # 1. Load CMUdict if needed
+    cmudict = {}
+    if FLAGS.use_full_cmudict or embed_type == "phone":
+        cmudict = load_cmudict(FLAGS.cmudict_path)
     
     # 2. Determine vocabulary list
     if FLAGS.use_full_cmudict:
@@ -70,9 +76,9 @@ def main(argv):
         strings = sorted([w.upper() for w in strings_dict.keys()])
         print(f"Using pruned vocabulary: {len(strings):,d} words.")
         
-    # 3. Load or compute phonetic embeddings
+    # 3. Load or compute embeddings
     cache_dir = Path(FLAGS.embeddings_cache_dir)
-    cache_name = "full_cmudict_phone_embeddings.pt" if FLAGS.use_full_cmudict else "pruned_phone_embeddings.pt"
+    cache_name = f"full_cmudict_{embed_type}_embeddings.pt" if FLAGS.use_full_cmudict else f"pruned_{embed_type}_embeddings.pt"
     cache_path = cache_dir / cache_name
     
     # Resolve the model directory (expects a Path object pointing to the directory containing model files)
@@ -81,14 +87,14 @@ def main(argv):
     if not model_dir.exists():
         model_dir = base_dir / "ml-acn-embed" / "model" / "embedder-64"
         
-    phone_embedder = TextEmbedder(
-        model_dir=model_dir, text_type="phone", device=device
+    embedder = TextEmbedder(
+        model_dir=model_dir, text_type=embed_type, device=device
     )
     
     embeddings = None
     if cache_path.exists():
         try:
-            print(f"Loading embeddings from cache: {cache_path}...")
+            print(f"Loading {embed_type} embeddings from cache: {cache_path}...")
             embeddings = torch.load(cache_path, map_location=device, weights_only=True)
             if embeddings.shape[0] != len(strings):
                 print("Cache shape mismatch, recomputing...")
@@ -98,23 +104,30 @@ def main(argv):
             embeddings = None
             
     if embeddings is None:
-        print("Computing phonetic embeddings...")
-        valid_phones = list(phone_embedder.model.subword_to_idx.keys())
-        fallback_phone = [valid_phones[0]] if valid_phones else ["AH0"]
+        print(f"Computing {embed_type} embeddings...")
         
-        prons = []
-        for word in strings:
-            pron = cmudict.get(word)
-            if not pron:
-                pron = [c for c in word]
-            pron = [ph for ph in pron if ph in phone_embedder.model.subword_to_idx]
-            if not pron:
-                pron = fallback_phone
-            prons.append(pron)
+        if embed_type == "phone":
+            valid_phones = list(embedder.model.subword_to_idx.keys())
+            fallback_phone = [valid_phones[0]] if valid_phones else ["AH0"]
             
-        embeddings = phone_embedder.get_embedding(
-            prons, batch_size=1000, log_interval=0
-        ).detach().to(device)
+            prons = []
+            for word in strings:
+                pron = cmudict.get(word)
+                if not pron:
+                    pron = [c for c in word]
+                pron = [ph for ph in pron if ph in embedder.model.subword_to_idx]
+                if not pron:
+                    pron = fallback_phone
+                prons.append(pron)
+                
+            embeddings = embedder.get_embedding(
+                prons, batch_size=1000, log_interval=0
+            ).detach().to(device)
+        else:
+            # Grapheme mode embeds raw word strings directly
+            embeddings = embedder.get_embedding(
+                strings, batch_size=1000, log_interval=0
+            ).detach().to(device)
         
         try:
             cache_dir.mkdir(parents=True, exist_ok=True)
