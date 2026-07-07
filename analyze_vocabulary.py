@@ -55,6 +55,7 @@ def load_cmudict(path):
 def main(argv):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    print(f"Using embedding type: {FLAGS.embed_type.upper()}")
     
     embed_type = FLAGS.embed_type
     
