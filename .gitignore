@@ -7,6 +7,7 @@ env/
 # Models and data
 model/
 wakeword/
+cmudict*
 
 # Python cache
 __pycache__/

@@ -1,6 +1,8 @@
 import os
+import sys
 from pathlib import Path
 
+from absl import flags
 import numpy as np
 import torch
 from flask import Flask, jsonify, request, render_template
@@ -10,11 +12,46 @@ from acn_embed.embed.embedder.text_embedder import TextEmbedder
 
 app = Flask(__name__)
 
+# Define ABSL Flags
+FLAGS = flags.FLAGS
+if "cmudict_path" not in FLAGS:
+    flags.DEFINE_string("cmudict_path", "cmudict-0.7b", "Path to the CMUdict file.")
+if "host" not in FLAGS:
+    flags.DEFINE_string("host", "0.0.0.0", "Host interface to bind the Flask server to.")
+if "port" not in FLAGS:
+    flags.DEFINE_integer("port", 5001, "Port to run the Flask server on.")
+
 def _prune_by_lm_score(strings, lmscores, embeddings, lm_score_thres):
     use_idx = np.nonzero(lmscores > lm_score_thres)[0]
     strings = [strings[idx] for idx in use_idx]
     embeddings = embeddings[use_idx, :]
     return strings, lmscores, embeddings
+
+def load_cmudict(path):
+    if not path or not os.path.exists(path):
+        print(f"Error: CMUdict not found at '{path}'.")
+        print("Please download it by running the following command:")
+        print(f"  curl -s https://raw.githubusercontent.com/Alexir/CMUdict/master/cmudict-0.7b -o {path or 'cmudict-0.7b'}")
+        sys.exit(1)
+        
+    cmudict = {}
+        
+    print(f"Loading CMUdict from {path}...")
+    with open(path, "r", encoding="latin-1") as f:
+        for line in f:
+            if line.startswith(";;;"):
+                continue
+            parts = line.strip().split()
+            if not parts:
+                continue
+            word = parts[0]
+            if "(" in word and ")" in word:
+                word = word.split("(")[0]
+            pron = parts[1:]
+            if word not in cmudict:
+                cmudict[word] = pron
+    print(f"Loaded {len(cmudict)} words from CMUdict.")
+    return cmudict
 
 class NNSearchBackend:
     def __init__(self, device: torch.device):
@@ -25,6 +62,9 @@ class NNSearchBackend:
         strings_path = base_dir / "wakeword" / "str2score.3-gram.pruned.1e-7.pt"
         grapheme_embedder_path = base_dir / "model" / "embedder-64"
         
+        # Load CMUdict
+        self.cmudict = load_cmudict(FLAGS.cmudict_path)
+        
         # Load strings and scores
         print("Loading strings...")
         with open(strings_path, "rb") as fobj:
@@ -32,31 +72,66 @@ class NNSearchBackend:
             self.strings = obj["strings"]
             self.lmscores = np.log(10) * np.array(obj["scores"])
             
-        # Load embeddings
+        # Load embeddings (grapheme space)
         print("Loading embeddings...")
         with open(embeddings_path, "rb") as fobj:
-            self.embeddings = torch.load(fobj, map_location=device, weights_only=True).detach()
+            self.grapheme_embeddings = torch.load(fobj, map_location=device, weights_only=True).detach()
             
         # Prune
         print("Pruning by LM score...")
-        self.strings, self.lmscores, self.embeddings = _prune_by_lm_score(
-            self.strings, self.lmscores, self.embeddings, lm_score_thres=-14.0
+        self.strings, self.lmscores, self.grapheme_embeddings = _prune_by_lm_score(
+            self.strings, self.lmscores, self.grapheme_embeddings, lm_score_thres=-14.0
         )
         
-        print("Loading embedder...")
-        self.embedder = TextEmbedder(
+        print("Loading embedders...")
+        self.grapheme_embedder = TextEmbedder(
             model_dir=grapheme_embedder_path, text_type="grapheme", device=device
         )
+        self.phone_embedder = TextEmbedder(
+            model_dir=grapheme_embedder_path, text_type="phone", device=device
+        )
+        
+        print("Computing phonetic embeddings for vocabulary...")
+        valid_phones = list(self.phone_embedder.model.subword_to_idx.keys())
+        fallback_phone = [valid_phones[0]] if valid_phones else ["AH0"]
+        
+        prons = []
+        for word in self.strings:
+            pron = self.cmudict.get(word.upper())
+            if not pron:
+                pron = [c for c in word.upper()]
+            # filter phonemes
+            pron = [ph for ph in pron if ph in self.phone_embedder.model.subword_to_idx]
+            if not pron:
+                pron = fallback_phone
+            prons.append(pron)
+            
+        # Batch embed all vocabulary prons
+        self.phone_embeddings = self.phone_embedder.get_embedding(
+            prons, batch_size=500, log_interval=0
+        ).detach()
         print("Backend ready.")
         
-    def search_and_graph(self, query_word: str, num_requested: int):
+    def search_and_graph(self, query_word: str, num_requested: int, embed_type: str = "grapheme"):
         query_word = query_word.upper()
         
-        # Get query embedding
-        query_emb_tensor = self.embedder.get_embedding(text=[query_word]).detach().to(device=self.device)
-        
+        if embed_type == "phone":
+            query_pron = self.cmudict.get(query_word)
+            if not query_pron:
+                query_pron = [c for c in query_word]
+            query_pron = [ph for ph in query_pron if ph in self.phone_embedder.model.subword_to_idx]
+            if not query_pron:
+                valid_phones = list(self.phone_embedder.model.subword_to_idx.keys())
+                query_pron = [valid_phones[0]] if valid_phones else ["AH0"]
+                
+            query_emb_tensor = self.phone_embedder.get_embedding(text=[query_pron]).detach().to(device=self.device)
+            embeddings_db = self.phone_embeddings
+        else:
+            query_emb_tensor = self.grapheme_embedder.get_embedding(text=[query_word]).detach().to(device=self.device)
+            embeddings_db = self.grapheme_embeddings
+            
         # Calculate distances to all wakewords
-        l2_dist = torch.sqrt(torch.sum(torch.pow(self.embeddings - query_emb_tensor, 2.0), dim=1))
+        l2_dist = torch.sqrt(torch.sum(torch.pow(embeddings_db - query_emb_tensor, 2.0), dim=1))
         
         # Retrieve top k (ask for more to filter out exact query matches)
         values, indices = torch.topk(l2_dist, dim=0, k=num_requested * 2, largest=False, sorted=True)
@@ -71,7 +146,7 @@ class NNSearchBackend:
                 neighbors.append({
                     "word": result_string,
                     "distance": dist,
-                    "embedding": self.embeddings[indices[rank]].cpu().numpy()
+                    "embedding": embeddings_db[indices[rank]].cpu().numpy()
                 })
                 shown += 1
             rank += 1
@@ -132,13 +207,14 @@ def index():
 def api_search():
     word = request.args.get("word", "").strip()
     n = request.args.get("n", 8, type=int)
+    embed_type = request.args.get("embed_type", "grapheme").strip()
     
     if not word:
         return jsonify({"error": "word parameter is required"}), 400
         
     try:
         b = get_backend()
-        graph_data = b.search_and_graph(word, n)
+        graph_data = b.search_and_graph(word, n, embed_type)
         return jsonify(graph_data)
     except Exception as e:
         import traceback
@@ -146,8 +222,11 @@ def api_search():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    host = "0.0.0.0"
-    port = 5001
+    # Parse command line flags
+    FLAGS(sys.argv, known_only=True)
+    
+    host = FLAGS.host
+    port = FLAGS.port
     
     # Enable debug mode on the app object to detect it during startup
     app.debug = True

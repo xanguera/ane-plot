@@ -325,6 +325,13 @@
                     <option value="none">None</option>
                 </select>
             </div>
+            <div class="filter-wrapper">
+                <label for="embed-filter">Embedding:</label>
+                <select id="embed-filter">
+                    <option value="grapheme" selected>Grapheme</option>
+                    <option value="phone">Phonetic</option>
+                </select>
+            </div>
             <button id="search-btn">Search</button>
             <button id="about-btn" class="secondary-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
@@ -389,13 +396,14 @@
         async function performSearch() {
             const word = document.getElementById('word-input').value.trim();
             const n = document.getElementById('n-input').value;
+            const embedType = document.getElementById('embed-filter').value;
             
             if (!word) return;
             
             document.getElementById('loading').style.display = 'flex';
             
             try {
-                const response = await fetch(`/api/search?word=${encodeURIComponent(word)}&n=${n}`);
+                const response = await fetch(`/api/search?word=${encodeURIComponent(word)}&n=${n}&embed_type=${embedType}`);
                 const data = await response.json();
                 
                 if (response.ok) {
@@ -540,6 +548,15 @@
                     tooltip.transition()
                         .duration(500)
                         .style("opacity", 0);
+                })
+                .on("click", (event, d) => {
+                    if (!d.is_query) {
+                        tooltip.transition()
+                            .duration(200)
+                            .style("opacity", 0);
+                        document.getElementById('word-input').value = d.id;
+                        performSearch();
+                    }
                 });
                 
             // Add labels
@@ -588,6 +605,9 @@
                 renderGraph(currentGraphData);
             }
         });
+
+        // Trigger a new search when the embedding type changes
+        document.getElementById('embed-filter').addEventListener('change', performSearch);
     </script>
 </body>
 </html>
