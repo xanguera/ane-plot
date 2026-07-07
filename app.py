@@ -152,10 +152,28 @@ if __name__ == "__main__":
     # Enable debug mode on the app object to detect it during startup
     app.debug = True
     
+    # Detect SSL certificate and key
+    cert_path = os.environ.get("SSL_CERT_PATH")
+    key_path = os.environ.get("SSL_KEY_PATH")
+    if not cert_path or not key_path:
+        for c_file, k_file in [("cert.pem", "key.pem"), ("server.crt", "server.key")]:
+            if os.path.exists(c_file) and os.path.exists(k_file):
+                cert_path, key_path = c_file, k_file
+                break
+
+    if cert_path and key_path and os.path.exists(cert_path) and os.path.exists(key_path):
+        ssl_context = (cert_path, key_path)
+    else:
+        ssl_context = "adhoc"
+        
     # Eagerly initialize backend only in the actual server process (prevent double-loading in reloader)
     if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         print("Initializing search backend (loading models & embeddings)...")
         get_backend()
+        if isinstance(ssl_context, tuple):
+            print(f" * Using custom SSL Certificate: {cert_path}")
+        else:
+            print(" * Using ad-hoc self-signed SSL Certificate")
         print(f" * Server is ready to receive traffic at: https://{host}:{port}")
         
-    app.run(host=host, port=port, ssl_context="adhoc")
+    app.run(host=host, port=port, ssl_context=ssl_context)
