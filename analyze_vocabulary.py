@@ -15,7 +15,7 @@ if "num_neighbors" not in FLAGS:
 if "cmudict_path" not in FLAGS:
     flags.DEFINE_string("cmudict_path", "cmudict-0.7b", "Path to the CMUdict file.")
 if "vocab_path" not in FLAGS:
-    flags.DEFINE_string("vocab_path", "str2score.3-gram.pruned.1e-7.pt", "Path to pruned vocabulary file.")
+    flags.DEFINE_string("vocab_path", "wakeword/str2score.3-gram.pruned.1e-7.pt", "Path to pruned vocabulary file.")
 if "embeddings_cache_dir" not in FLAGS:
     flags.DEFINE_string("embeddings_cache_dir", "/tmp", "Directory to cache phonetic embeddings.")
 if "use_full_cmudict" not in FLAGS:
