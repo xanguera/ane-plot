@@ -403,6 +403,13 @@
             
             if (!word) return;
             
+            // Sync parameters with browser URL
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('word', word);
+            urlParams.set('n', n);
+            urlParams.set('embed_type', embedType);
+            window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
+            
             document.getElementById('loading').style.display = 'flex';
             
             try {
@@ -509,6 +516,35 @@
                         .style("opacity", 0.2 + (d.weight / maxWeight) * 0.8);
                 });
                 
+            // Calculate average scale from high-dimensional distance to 2D pixel distance
+            let totalScale = 0;
+            let count = 0;
+            if (queryNode) {
+                nodes.forEach(n => {
+                    if (!n.is_query && n.dist_to_query > 0) {
+                        const dx = n.px - queryNode.px;
+                        const dy = n.py - queryNode.py;
+                        const pixelDist = Math.sqrt(dx * dx + dy * dy);
+                        totalScale += pixelDist / n.dist_to_query;
+                        count++;
+                    }
+                });
+            }
+            const pixelsPerUnit = count > 0 ? (totalScale / count) : 100;
+            
+            // Draw a dashed circle at a distance of 1.0 from the query node
+            if (queryNode && pixelsPerUnit > 0) {
+                linkGroup.append("circle")
+                    .attr("cx", queryNode.px)
+                    .attr("cy", queryNode.py)
+                    .attr("r", pixelsPerUnit)
+                    .style("fill", "none")
+                    .style("stroke", "rgba(255, 255, 255, 0.25)")
+                    .style("stroke-width", 1.5)
+                    .style("stroke-dasharray", "5,5")
+                    .attr("pointer-events", "none");
+            }
+            
             // Draw nodes
             const node = nodeGroup.selectAll("g")
                 .data(nodes)
@@ -578,6 +614,24 @@
                 zoom.transform, 
                 d3.zoomIdentity
             );
+        }
+        
+        // Initialize parameters from URL query parameters on page load if present
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        const urlWord = urlParams.get('word');
+        if (urlWord) {
+            document.getElementById('word-input').value = urlWord.toUpperCase();
+        }
+        
+        const urlN = urlParams.get('n');
+        if (urlN) {
+            document.getElementById('n-input').value = urlN;
+        }
+        
+        const urlEmbedType = urlParams.get('embed_type');
+        if (urlEmbedType && (urlEmbedType === 'phone' || urlEmbedType === 'grapheme')) {
+            document.getElementById('embed-filter').value = urlEmbedType;
         }
         
         // Initial search to populate graph
