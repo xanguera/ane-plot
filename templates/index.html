@@ -409,7 +409,8 @@
             document.getElementById('loading').style.display = 'flex';
             
             try {
-                const response = await fetch(`/api/search?word=${encodeURIComponent(word)}&n=${n}&embed_type=${embedType}`);
+                const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
+                const response = await fetch(`${basePath}api/search?word=${encodeURIComponent(word)}&n=${n}&embed_type=${embedType}`);
                 const data = await response.json();
                 
                 if (response.ok) {

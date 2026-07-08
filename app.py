@@ -30,6 +30,8 @@ if "ignore_sighup" not in FLAGS:
     flags.DEFINE_boolean("ignore_sighup", True, "Ignore SIGHUP signal (prevent termination when SSH connection dies).")
 if "embedding_dim" not in FLAGS:
     flags.DEFINE_enum("embedding_dim", "64", ["2", "4", "8", "16", "32", "48", "64", "128", "256", "512", "1024", "2048"], "Embedding dimension size.")
+if "ssl" not in FLAGS:
+    flags.DEFINE_boolean("ssl", True, "Enable HTTPS/SSL. Set to False to run in plain HTTP mode (useful behind Nginx reverse proxy).")
 
 def _prune_by_lm_score(strings, lmscores, embeddings, lm_score_thres):
     use_idx = np.nonzero(lmscores > lm_score_thres)[0]
@@ -278,28 +280,34 @@ if __name__ == "__main__":
     # Enable debug mode on the app object to detect it during startup
     app.debug = True
     
-    # Detect SSL certificate and key
-    cert_path = os.environ.get("SSL_CERT_PATH")
-    key_path = os.environ.get("SSL_KEY_PATH")
-    if not cert_path or not key_path:
-        for c_file, k_file in [("cert.pem", "key.pem"), ("server.crt", "server.key")]:
-            if os.path.exists(c_file) and os.path.exists(k_file):
-                cert_path, key_path = c_file, k_file
-                break
+    if FLAGS.ssl:
+        # Detect SSL certificate and key
+        cert_path = os.environ.get("SSL_CERT_PATH")
+        key_path = os.environ.get("SSL_KEY_PATH")
+        if not cert_path or not key_path:
+            for c_file, k_file in [("cert.pem", "key.pem"), ("server.crt", "server.key")]:
+                if os.path.exists(c_file) and os.path.exists(k_file):
+                    cert_path, key_path = c_file, k_file
+                    break
 
-    if cert_path and key_path and os.path.exists(cert_path) and os.path.exists(key_path):
-        ssl_context = (cert_path, key_path)
+        if cert_path and key_path and os.path.exists(cert_path) and os.path.exists(key_path):
+            ssl_context = (cert_path, key_path)
+        else:
+            ssl_context = "adhoc"
     else:
-        ssl_context = "adhoc"
+        ssl_context = None
         
     # Eagerly initialize backend only in the actual server process (prevent double-loading in reloader)
     if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         print("Initializing search backend (loading models & embeddings)...")
         get_backend()
-        if isinstance(ssl_context, tuple):
+        if ssl_context is None:
+            print(" * Running in plain HTTP mode (No SSL)")
+        elif isinstance(ssl_context, tuple):
             print(f" * Using custom SSL Certificate: {cert_path}")
         else:
             print(" * Using ad-hoc self-signed SSL Certificate")
-        print(f" * Server is ready to receive traffic at: https://{host}:{port}")
+        protocol = "http" if ssl_context is None else "https"
+        print(f" * Server is ready to receive traffic at: {protocol}://{host}:{port}")
         
     app.run(host=host, port=port, ssl_context=ssl_context)
