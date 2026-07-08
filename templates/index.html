@@ -474,6 +474,48 @@
                 n.py = yScale(n.y);
             });
             
+            // Separate overlapping nodes (e.g. homophones with identical coordinates)
+            const coordinateGroups = [];
+            nodes.forEach(n => {
+                let group = coordinateGroups.find(g => 
+                    Math.abs(g.center_x - n.px) < 1.0 && Math.abs(g.center_y - n.py) < 1.0
+                );
+                if (group) {
+                    group.nodes.push(n);
+                } else {
+                    coordinateGroups.push({
+                        center_x: n.px,
+                        center_y: n.py,
+                        nodes: [n]
+                    });
+                }
+            });
+            
+            coordinateGroups.forEach(group => {
+                const m = group.nodes.length;
+                if (m > 1) {
+                    // Place the query node at the beginning if present
+                    group.nodes.sort((a, b) => (b.is_query ? 1 : 0) - (a.is_query ? 1 : 0));
+                    
+                    const radius = 35; // separation radius in pixels
+                    if (group.nodes[0].is_query) {
+                        // Keep query node at the center, distribute neighbors around it
+                        for (let j = 1; j < m; j++) {
+                            const angle = (2 * Math.PI * (j - 1)) / (m - 1);
+                            group.nodes[j].px = group.center_x + radius * Math.cos(angle);
+                            group.nodes[j].py = group.center_y + radius * Math.sin(angle);
+                        }
+                    } else {
+                        // Distribute all nodes evenly in a circle
+                        for (let j = 0; j < m; j++) {
+                            const angle = (2 * Math.PI * j) / m;
+                            group.nodes[j].px = group.center_x + radius * Math.cos(angle);
+                            group.nodes[j].py = group.center_y + radius * Math.sin(angle);
+                        }
+                    }
+                }
+            });
+            
             // Draw edges
             const maxWeight = d3.max(edges, d => d.weight) || 1;
             const link = linkGroup.selectAll("line")
