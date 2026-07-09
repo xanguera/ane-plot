@@ -32,6 +32,8 @@ if "embedding_dim" not in FLAGS:
     flags.DEFINE_enum("embedding_dim", "64", ["2", "4", "8", "16", "32", "48", "64", "128", "256", "512", "1024", "2048"], "Embedding dimension size.")
 if "ssl" not in FLAGS:
     flags.DEFINE_boolean("ssl", True, "Enable HTTPS/SSL. Set to False to run in plain HTTP mode (useful behind Nginx reverse proxy).")
+if "query_log_file" not in FLAGS:
+    flags.DEFINE_string("query_log_file", "acn_queries.log", "Path to the query log file (empty or 'none' to disable).")
 
 def _prune_by_lm_score(strings, lmscores, embeddings, lm_score_thres):
     use_idx = np.nonzero(lmscores > lm_score_thres)[0]
@@ -254,6 +256,18 @@ def api_search():
     
     if not word:
         return jsonify({"error": "word parameter is required"}), 400
+        
+    # Append-only query logging
+    if FLAGS.query_log_file and FLAGS.query_log_file.lower() != "none":
+        try:
+            import datetime
+            timestamp = datetime.datetime.now().isoformat()
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+            log_entry = f"{timestamp}\t{client_ip}\t{word}\t{n}\t{embed_type}\n"
+            with open(FLAGS.query_log_file, "a", encoding="utf-8") as f:
+                f.write(log_entry)
+        except Exception as e:
+            print(f"Warning: Failed to write to query log: {e}")
         
     try:
         b = get_backend()
