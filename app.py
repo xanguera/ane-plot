@@ -31,7 +31,7 @@ if "ignore_sighup" not in FLAGS:
 if "embedding_dim" not in FLAGS:
     flags.DEFINE_enum("embedding_dim", "64", ["2", "4", "8", "16", "32", "48", "64", "128", "256", "512", "1024", "2048"], "Embedding dimension size.")
 if "cached_embeddings" not in FLAGS:
-    flags.DEFINE_list("cached_embeddings", ["16", "32", "64", "128"], "List of pre-cached embedding dimensions available for selection.")
+    flags.DEFINE_list("cached_embeddings", ["2", "4", "8", "16", "32", "64", "128"], "List of pre-cached embedding dimensions available for selection.")
 if "ssl" not in FLAGS:
     flags.DEFINE_boolean("ssl", True, "Enable HTTPS/SSL. Set to False to run in plain HTTP mode (useful behind Nginx reverse proxy).")
 if "query_log_file" not in FLAGS:
