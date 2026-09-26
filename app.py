@@ -23,7 +23,7 @@ if "port" not in FLAGS:
 if "embeddings_cache_dir" not in FLAGS:
     flags.DEFINE_string("embeddings_cache_dir", "/tmp", "Directory to cache phonetic embeddings.")
 if "default_embed_type" not in FLAGS:
-    flags.DEFINE_string("default_embed_type", "phone", "Default embedding type to use (phone or grapheme).")
+    flags.DEFINE_string("default_embed_type", "grapheme", "Default embedding type to use (phone or grapheme).")
 if "default_neighbors" not in FLAGS:
     flags.DEFINE_integer("default_neighbors", 8, "Default number of neighbors to display.")
 if "ignore_sighup" not in FLAGS:
