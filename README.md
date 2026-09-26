@@ -1,6 +1,5 @@
 # ACN Plot
-
-A web application that takes in a word and outputs its $n$ nearest phonetic neighbors as an interactive 2D edge-weighted graph. It uses Apple's [Acoustic Neighbor Embeddings](https://github.com/apple/ml-acn-embed) to compute similarities and t-SNE for the 2D layout.
+A web application for exploring the phonetic relationships between words using Apple's [Acoustic Neighbor Embeddings](https://github.com/apple/ml-acn-embed). It takes in a word and outputs its $n$ nearest phonetic neighbors as an interactive 2D edge-weighted graph
 
 ## Key Components:
 
@@ -10,7 +9,7 @@ A web application that takes in a word and outputs its $n$ nearest phonetic neig
 
 ![Example](ANE_Example_Hello.png)
 
-There is a version running at Stanford [quickin.stanford.edu/ane](https://quicksin.stanford.edu/ane)
+There is a version running at [https://quickin.stanford.edu/ane](https://quicksin.stanford.edu/ane)
 ## Setup
 
 ### 1. Clone the repository
