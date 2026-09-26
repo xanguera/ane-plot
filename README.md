@@ -4,11 +4,13 @@ A web application that takes in a word and outputs its $n$ nearest phonetic neig
 
 ## Key Components:
 
-- Acoustic Embeddings**: Utilizes Apple's [Acoustic Neighbor Embeddings (ACN)](https://github.com/apple/ml-acn-embed) to map words into a high-dimensional space where similar-sounding words are closer together. There is a setting at the top of the page for the dimensionality of the global embedding.
-- t-SNE Projection**: Applies [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://en.wikipedia.org/wiki/T-distributed_stochastic_neighbor_embedding) to reduce the high-dimensional embeddings into a 2D layout. We get the best results with a large global embedding, choose the neighborhood words, and then reduce to 2D for display.
-- Interactive Graph**: Renders query words and their nearest acoustic neighbors using D3.js. Hover over nodes to inspect individual similarity distances.
+- **Acoustic Embeddings**: Utilizes Apple's [Acoustic Neighbor Embeddings (ACN)](https://github.com/apple/ml-acn-embed) to map words into a high-dimensional space where similar-sounding words are closer together. There is a setting at the top of the page for the dimensionality of the global embedding.
+- **t-SNE Projection**: Applies [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://en.wikipedia.org/wiki/T-distributed_stochastic_neighbor_embedding) to reduce the high-dimensional embeddings into a 2D layout. We get the best results with a large global embedding, choose the neighborhood words, and then reduce to 2D for display.
+- **Interactive Graph**: Renders query words and their nearest acoustic neighbors using D3.js. Hover over nodes to inspect individual similarity distances.
 
 ![Example](ANE_Example_Hello.png)
+
+There is a version running at Stanford [quickin.stanford.edu/ane](https://quicksin.stanford.edu/ane)
 ## Setup
 
 ### 1. Clone the repository
