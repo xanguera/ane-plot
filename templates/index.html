@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,7 +18,9 @@
             --edge-color: rgba(148, 163, 184, 0.4);
         }
 
-        *, *:before, *:after {
+        *,
+        *:before,
+        *:after {
             box-sizing: border-box;
         }
 
@@ -37,7 +40,7 @@
             padding: 1.5rem;
             background: var(--card-bg);
             backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -59,7 +62,7 @@
 
         input[type="text"] {
             background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             color: white;
             padding: 0.5rem 1rem;
             border-radius: 0.5rem;
@@ -71,7 +74,7 @@
         input[type="text"]:focus {
             border-color: var(--primary);
         }
-        
+
         .n-input-wrapper {
             display: flex;
             align-items: center;
@@ -81,7 +84,7 @@
         input[type="number"] {
             width: 60px;
             background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             color: white;
             padding: 0.5rem;
             border-radius: 0.5rem;
@@ -171,7 +174,7 @@
             position: absolute;
             padding: 0.5rem 1rem;
             background: rgba(15, 23, 42, 0.9);
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 0.5rem;
             pointer-events: none;
             opacity: 0;
@@ -180,7 +183,7 @@
             z-index: 20;
             backdrop-filter: blur(4px);
         }
-        
+
         #loading {
             position: absolute;
             top: 50%;
@@ -194,20 +197,22 @@
             padding: 2rem;
             border-radius: 1rem;
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        
+
         .spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid rgba(255,255,255,0.1);
+            border: 4px solid rgba(255, 255, 255, 0.1);
             border-top-color: var(--primary);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
-        
+
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Modal Styles */
@@ -340,22 +345,26 @@
                 flex: 1 1 100%;
             }
 
-            .n-input-wrapper, .filter-wrapper {
+            .n-input-wrapper,
+            .filter-wrapper {
                 flex: 1 1 auto;
                 min-width: 120px;
                 justify-content: space-between;
             }
 
-            .n-input-wrapper input, .filter-wrapper select {
+            .n-input-wrapper input,
+            .filter-wrapper select {
                 width: 100%;
             }
 
-            #search-btn, #about-btn {
+            #search-btn,
+            #about-btn {
                 flex: 1 1 45%;
             }
         }
     </style>
 </head>
+
 <body>
     <header>
         <h1>Phonetic Neighbors</h1>
@@ -376,26 +385,32 @@
             <div class="filter-wrapper">
                 <label for="embed-filter">Embedding:</label>
                 <select id="embed-filter">
-                    <option value="grapheme" {% if default_embed_type == 'grapheme' %}selected{% endif %}>Grapheme</option>
-                    <option value="phone" {% if default_embed_type == 'phone' %}selected{% endif %}>Phonetic</option>
+                    <option value="grapheme" {% if default_embed_type=='grapheme' %}selected{% endif %}>Grapheme
+                    </option>
+                    <option value="phone" {% if default_embed_type=='phone' %}selected{% endif %}>Phonetic</option>
                 </select>
             </div>
             <div class="filter-wrapper">
                 <label for="dim-filter">Dimension:</label>
                 <select id="dim-filter">
                     {% for d in cached_embeddings %}
-                    <option value="{{ d }}" {% if d == default_embedding_dim %}selected{% endif %}>{{ d }}</option>
+                    <option value="{{ d }}" {% if d==default_embedding_dim %}selected{% endif %}>{{ d }}</option>
                     {% endfor %}
                 </select>
             </div>
             <button id="search-btn">Search</button>
             <button id="about-btn" class="secondary-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
                 About
             </button>
         </div>
     </header>
-    
+
     <div id="graph-container">
         <svg id="viz"></svg>
         <div id="loading">
@@ -413,15 +428,29 @@
                 <button class="modal-close" id="close-modal-btn">&times;</button>
             </div>
             <div class="modal-body">
-                <p>This web application visualizes the <strong>phonetic/acoustic similarity</strong> between words as an interactive 2D edge-weighted graph.</p>
+                <p>This web application visualizes the <strong>phonetic/acoustic similarity</strong> between words as an
+                    interactive 2D edge-weighted graph.</p>
                 <p><strong>Key Components:</strong></p>
                 <ul>
-                    <li><strong>Acoustic Embeddings:</strong> Utilizes Apple's <a href="https://github.com/apple/ml-acn-embed" target="_blank" rel="noopener noreferrer">Acoustic Neighbor Embeddings (ACN)</a> to map words into a high-dimensional space where similar-sounding words reside closer together.</li>
-                    <li><strong>t-SNE Projection:</strong> Applies t-Distributed Stochastic Neighbor Embedding (t-SNE) to reduce the high-dimensional embeddings into a 2D layout.</li>
-                    <li><strong>Interactive Graph:</strong> Renders query words and their nearest acoustic neighbors using D3.js. Hover over nodes to inspect individual similarity distances.</li>
+                    <li><strong>Acoustic Embeddings:</strong> Utilizes Apple's
+                        <a href="https://github.com/apple/ml-acn-embed" target="_blank"
+                            rel="noopener noreferrer">Acoustic Neighbor Embeddings (ACN)</a>
+                        to map words into a high-dimensional space where similar-sounding words are closer together.
+                        There is a setting at the top of the page for the dimensionality of the global embedding.
+                    </li>
+                    <li><strong>t-SNE Projection:</strong> Applies t-Distributed Stochastic Neighbor Embedding (t-SNE)
+                        to reduce
+                        the high-dimensional embeddings into a 2D layout. We get the best results with a large global
+                        embedding,
+                        choose the neighborhood words, and then reduce to 2D for display.</li>
+                    <li><strong>Interactive Graph:</strong> Renders query words and their nearest acoustic neighbors
+                        using D3.js. Hover over nodes to inspect individual similarity distances.</li>
                 </ul>
-                <p style="margin-top: 1.5rem; font-size: 0.85rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.75rem; text-align: center; font-style: italic;">
-                    By Kent Slaney and Malcolm Slaney with an implementation by Antigravity
+                <p
+                    style="margin-top: 1.5rem; font-size: 0.85rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.75rem; text-align: center; font-style: italic;">
+                    By Kent Slaney and Malcolm Slaney with an implementation by Antigravity. Source code available
+                    <a href="https://github.com/malcolmslaney/acn-plot" target="_blank"
+                        rel="noopener noreferrer">here</a>.
                 </p>
             </div>
         </div>
@@ -432,21 +461,21 @@
         const svg = d3.select("#viz");
         const tooltip = d3.select("#tooltip");
         const container = document.getElementById('graph-container');
-        
+
         // Define zoom behavior
         const zoom = d3.zoom()
             .scaleExtent([0.1, 4])
             .on("zoom", (event) => {
                 g.attr("transform", event.transform);
             });
-            
+
         svg.call(zoom);
-        
+
         // Create a main group for zooming
         const g = svg.append("g");
         const linkGroup = g.append("g").attr("class", "links");
         const nodeGroup = g.append("g").attr("class", "nodes");
-        
+
         document.getElementById('search-btn').addEventListener('click', performSearch);
         document.getElementById('word-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') performSearch();
@@ -458,19 +487,19 @@
             const embedType = document.getElementById('embed-filter').value;
             const dimSelect = document.getElementById('dim-filter');
             const dim = dimSelect ? dimSelect.value : '{{ default_embedding_dim }}';
-            
+
             if (!word) return;
-            
+
             // Sync parameters with browser URL
             syncUrlParams();
-            
+
             document.getElementById('loading').style.display = 'flex';
-            
+
             try {
                 const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
                 const response = await fetch(`${basePath}api/search?word=${encodeURIComponent(word)}&n=${n}&embed_type=${embedType}&dim=${dim}`);
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     currentGraphData = data;
                     renderGraph(data);
@@ -484,59 +513,59 @@
                 document.getElementById('loading').style.display = 'none';
             }
         }
-        
+
         function renderGraph(data) {
             if (!data) return;
-            
+
             const width = container.clientWidth;
             const height = container.clientHeight;
-            
+
             linkGroup.selectAll("*").remove();
             nodeGroup.selectAll("*").remove();
-            
+
             const nodes = data.nodes;
-            
+
             // Filter edges based on user selection
             const filterValue = document.getElementById('link-filter').value;
             const queryNode = nodes.find(n => n.is_query);
             const queryId = queryNode ? queryNode.id : null;
-            
+
             let edges = data.edges;
             if (filterValue === 'query') {
                 edges = data.edges.filter(d => d.source === queryId || d.target === queryId);
             } else if (filterValue === 'none') {
                 edges = [];
             }
-            
+
             // Normalize t-SNE coordinates to fit nicely on screen
             const xExtent = d3.extent(nodes, d => d.x);
             const yExtent = d3.extent(nodes, d => d.y);
-            
+
             // Add padding
             const padding = 100;
             const xScale = d3.scaleLinear()
                 .domain(xExtent)
                 .range([padding, width - padding]);
-                
+
             const yScale = d3.scaleLinear()
                 .domain(yExtent)
                 .range([padding, height - padding]);
-                
+
             // If only 1 node, put it in center
             if (nodes.length === 1) {
                 xScale.domain([-1, 1]).range([0, width]);
                 yScale.domain([-1, 1]).range([0, height]);
             }
-            
+
             nodes.forEach(n => {
                 n.px = xScale(n.x);
                 n.py = yScale(n.y);
             });
-            
+
             // Separate overlapping nodes (e.g. homophones with identical coordinates)
             const coordinateGroups = [];
             nodes.forEach(n => {
-                let group = coordinateGroups.find(g => 
+                let group = coordinateGroups.find(g =>
                     Math.abs(g.center_x - n.px) < 1.0 && Math.abs(g.center_y - n.py) < 1.0
                 );
                 if (group) {
@@ -549,13 +578,13 @@
                     });
                 }
             });
-            
+
             coordinateGroups.forEach(group => {
                 const m = group.nodes.length;
                 if (m > 1) {
                     // Place the query node at the beginning if present
                     group.nodes.sort((a, b) => (b.is_query ? 1 : 0) - (a.is_query ? 1 : 0));
-                    
+
                     const radius = 35; // separation radius in pixels
                     if (group.nodes[0].is_query) {
                         // Keep query node at the center, distribute neighbors around it
@@ -574,7 +603,7 @@
                     }
                 }
             });
-            
+
             // Draw edges
             const maxWeight = d3.max(edges, d => d.weight) || 1;
             const link = linkGroup.selectAll("line")
@@ -592,13 +621,13 @@
                     tooltip.transition()
                         .duration(200)
                         .style("opacity", 1);
-                    
+
                     const tooltipHtml = `<strong>${d.source} ↔ ${d.target}</strong><br/>Distance: ${d.distance.toFixed(4)}`;
-                    
+
                     tooltip.html(tooltipHtml)
                         .style("left", (event.pageX + 15) + "px")
                         .style("top", (event.pageY - 28) + "px");
-                        
+
                     d3.select(event.currentTarget)
                         .style("stroke", "var(--primary)")
                         .style("opacity", 1);
@@ -607,18 +636,18 @@
                     tooltip.transition()
                         .duration(500)
                         .style("opacity", 0);
-                        
+
                     d3.select(event.currentTarget)
                         .style("stroke", "var(--edge-color)")
                         .style("opacity", 0.2 + (d.weight / maxWeight) * 0.8);
                 });
-                
+
             // Draw nodes
             const node = nodeGroup.selectAll("g")
                 .data(nodes)
                 .join("g")
                 .attr("transform", d => `translate(${d.px},${d.py})`);
-                
+
             node.append("circle")
                 .attr("r", d => d.is_query ? 24 : 16)
                 .style("fill", d => d.is_query ? "var(--query-node)" : "var(--neighbor-node)")
@@ -630,18 +659,18 @@
                         .transition()
                         .duration(200)
                         .attr("r", d.is_query ? 28 : 20);
-                        
+
                     tooltip.transition()
                         .duration(200)
                         .style("opacity", 1);
-                    
+
                     let tooltipHtml = `<strong>${d.id}</strong><br/>`;
                     if (!d.is_query) {
                         tooltipHtml += `Distance: ${d.dist_to_query.toFixed(3)}`;
                     } else {
                         tooltipHtml += `Query Word`;
                     }
-                    
+
                     tooltip.html(tooltipHtml)
                         .style("left", (event.pageX + 15) + "px")
                         .style("top", (event.pageY - 28) + "px");
@@ -651,7 +680,7 @@
                         .transition()
                         .duration(200)
                         .attr("r", d.is_query ? 24 : 16);
-                        
+
                     tooltip.transition()
                         .duration(500)
                         .style("opacity", 0);
@@ -665,7 +694,7 @@
                         performSearch();
                     }
                 });
-                
+
             // Add labels
             node.append("text")
                 .text(d => d.id)
@@ -676,14 +705,14 @@
                 .style("font-weight", d => d.is_query ? "bold" : "normal")
                 .style("pointer-events", "none")
                 .style("text-shadow", "0px 2px 4px rgba(0,0,0,0.8)");
-                
+
             // Auto fit to screen
             svg.transition().duration(750).call(
-                zoom.transform, 
+                zoom.transform,
                 d3.zoomIdentity
             );
         }
-        
+
         // Initialize parameters from URL query parameters on page load if present
         function syncUrlParams() {
             const word = document.getElementById('word-input').value.trim();
@@ -692,7 +721,7 @@
             const dimSelect = document.getElementById('dim-filter');
             const dim = dimSelect ? dimSelect.value : '{{ default_embedding_dim }}';
             const links = document.getElementById('link-filter').value;
-            
+
             const urlParams = new URLSearchParams(window.location.search);
             if (word) {
                 urlParams.set('word', word);
@@ -708,22 +737,22 @@
 
         // Initialize parameters from URL query parameters on page load if present
         const urlParams = new URLSearchParams(window.location.search);
-        
+
         const urlWord = urlParams.get('word');
         if (urlWord) {
             document.getElementById('word-input').value = urlWord.toUpperCase();
         }
-        
+
         const urlN = urlParams.get('n');
         if (urlN) {
             document.getElementById('n-input').value = urlN;
         }
-        
+
         const urlEmbedType = urlParams.get('embed_type');
         if (urlEmbedType && (urlEmbedType === 'phone' || urlEmbedType === 'grapheme')) {
             document.getElementById('embed-filter').value = urlEmbedType;
         }
-        
+
         const urlDim = urlParams.get('dim') || urlParams.get('embedding_dim');
         if (urlDim) {
             const dimSelect = document.getElementById('dim-filter');
@@ -731,12 +760,12 @@
                 dimSelect.value = urlDim;
             }
         }
-        
+
         const urlLinks = urlParams.get('links');
         if (urlLinks && (urlLinks === 'query' || urlLinks === 'all' || urlLinks === 'none')) {
             document.getElementById('link-filter').value = urlLinks;
         }
-        
+
         // Initial search to populate graph
         performSearch();
 
@@ -769,7 +798,7 @@
 
         // Trigger a new search when the embedding type changes
         document.getElementById('embed-filter').addEventListener('change', performSearch);
-        
+
         // Trigger a new search when the embedding dimension changes
         const dimFilterEl = document.getElementById('dim-filter');
         if (dimFilterEl) {
@@ -777,4 +806,5 @@
         }
     </script>
 </body>
+
 </html>
