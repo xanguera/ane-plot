@@ -30,6 +30,8 @@ if "ignore_sighup" not in FLAGS:
     flags.DEFINE_boolean("ignore_sighup", True, "Ignore SIGHUP signal (prevent termination when SSH connection dies).")
 if "embedding_dim" not in FLAGS:
     flags.DEFINE_enum("embedding_dim", "64", ["2", "4", "8", "16", "32", "48", "64", "128", "256", "512", "1024", "2048"], "Embedding dimension size.")
+if "cached_embeddings" not in FLAGS:
+    flags.DEFINE_list("cached_embeddings", ["16", "32", "64", "128"], "List of pre-cached embedding dimensions available for selection.")
 if "ssl" not in FLAGS:
     flags.DEFINE_boolean("ssl", True, "Enable HTTPS/SSL. Set to False to run in plain HTTP mode (useful behind Nginx reverse proxy).")
 if "query_log_file" not in FLAGS:
@@ -72,9 +74,8 @@ class NNSearchBackend:
         self.device = device
         
         base_dir = Path(__file__).parent.resolve()
-        embeddings_path = base_dir / "wakeword" / "embeddings-3-gram.pruned.1e-7.pt"
+        wakeword_embeddings_path = base_dir / "wakeword" / "embeddings-3-gram.pruned.1e-7.pt"
         strings_path = base_dir / "wakeword" / "str2score.3-gram.pruned.1e-7.pt"
-        grapheme_embedder_path = base_dir / "model" / f"embedder-{FLAGS.embedding_dim}"
         
         # Load CMUdict
         self.cmudict = load_cmudict(FLAGS.cmudict_path)
@@ -86,90 +87,154 @@ class NNSearchBackend:
             self.strings = obj["strings"]
             self.lmscores = np.log(10) * np.array(obj["scores"])
             
-        # Load embeddings (grapheme space)
-        print("Loading embeddings...")
-        with open(embeddings_path, "rb") as fobj:
-            self.grapheme_embeddings = torch.load(fobj, map_location=device, weights_only=True).detach()
+        # Load default base wakeword embeddings (grapheme space)
+        print("Loading base wakeword embeddings...")
+        with open(wakeword_embeddings_path, "rb") as fobj:
+            base_grapheme_embeddings = torch.load(fobj, map_location=device, weights_only=True).detach()
             
         # Prune
         print("Pruning by LM score...")
-        self.strings, self.lmscores, self.grapheme_embeddings = _prune_by_lm_score(
-            self.strings, self.lmscores, self.grapheme_embeddings, lm_score_thres=-14.0
+        self.strings, self.lmscores, base_grapheme_embeddings = _prune_by_lm_score(
+            self.strings, self.lmscores, base_grapheme_embeddings, lm_score_thres=-14.0
         )
         
-        print("Loading embedders...")
-        self.grapheme_embedder = TextEmbedder(
-            model_dir=grapheme_embedder_path, text_type="grapheme", device=device
-        )
-        self.phone_embedder = TextEmbedder(
-            model_dir=grapheme_embedder_path, text_type="phone", device=device
-        )
-        
+        # Determine list of embedding dimensions to pre-cache
+        cached_dims = [str(d).strip() for d in FLAGS.cached_embeddings if str(d).strip()]
+        default_dim = str(FLAGS.embedding_dim).strip()
+        if default_dim not in cached_dims:
+            cached_dims.append(default_dim)
+            
         cache_dir = Path(FLAGS.embeddings_cache_dir)
-        cache_path = cache_dir / f"phone_embeddings_cache_{FLAGS.embedding_dim}.pt"
+        cache_dir.mkdir(parents=True, exist_ok=True)
         
-        loaded_from_cache = False
-        if cache_path.exists():
-            try:
-                print(f"Loading phonetic embeddings from cache: {cache_path}...")
-                self.phone_embeddings = torch.load(cache_path, map_location=device, weights_only=True)
-                if self.phone_embeddings.shape[0] == len(self.strings):
-                    loaded_from_cache = True
-                    print("Phonetic embeddings loaded successfully from cache.")
-                else:
-                    print("Warning: Cached phonetic embeddings size mismatch, recomputing...")
-            except Exception as e:
-                print(f"Warning: Failed to load cached embeddings: {e}, recomputing...")
+        self.models = {}
+        for dim_str in cached_dims:
+            model_dir = base_dir / "model" / f"embedder-{dim_str}"
+            if not model_dir.exists():
+                print(f"Warning: Model directory '{model_dir}' does not exist. Skipping dimension {dim_str}.")
+                continue
                 
-        if not loaded_from_cache:
-            print("Computing phonetic embeddings for vocabulary...")
-            valid_phones = list(self.phone_embedder.model.subword_to_idx.keys())
-            fallback_phone = [valid_phones[0]] if valid_phones else ["AH0"]
+            print(f"Loading embedders for dimension {dim_str}...")
+            grapheme_embedder = TextEmbedder(
+                model_dir=model_dir, text_type="grapheme", device=device
+            )
+            phone_embedder = TextEmbedder(
+                model_dir=model_dir, text_type="phone", device=device
+            )
             
-            prons = []
-            for word in self.strings:
-                pron = self.cmudict.get(word.upper())
-                if not pron:
-                    pron = [c for c in word.upper()]
-                # filter phonemes
-                pron = [ph for ph in pron if ph in self.phone_embedder.model.subword_to_idx]
-                if not pron:
-                    pron = fallback_phone
-                prons.append(pron)
-                
-            # Batch embed all vocabulary prons
-            self.phone_embeddings = self.phone_embedder.get_embedding(
-                prons, batch_size=500, log_interval=0
-            ).detach()
+            # 1. Grapheme vocabulary embeddings
+            grapheme_cache_path = cache_dir / f"grapheme_embeddings_cache_{dim_str}.pt"
+            grapheme_embeddings = None
             
-            try:
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                print(f"Caching phonetic embeddings to {cache_path}...")
-                torch.save(self.phone_embeddings, cache_path)
-            except Exception as e:
-                print(f"Warning: Failed to cache phonetic embeddings: {e}")
+            if base_grapheme_embeddings.shape[0] == len(self.strings) and base_grapheme_embeddings.shape[1] == int(dim_str):
+                print(f"Using pre-packaged wakeword grapheme embeddings for dim {dim_str}.")
+                grapheme_embeddings = base_grapheme_embeddings
+            elif grapheme_cache_path.exists():
+                try:
+                    print(f"Loading grapheme embeddings for dim {dim_str} from cache: {grapheme_cache_path}...")
+                    cached_emb = torch.load(grapheme_cache_path, map_location=device, weights_only=True)
+                    if cached_emb.shape[0] == len(self.strings) and cached_emb.shape[1] == int(dim_str):
+                        grapheme_embeddings = cached_emb
+                    else:
+                        print(f"Warning: Cached grapheme embeddings size mismatch for dim {dim_str}, recomputing...")
+                except Exception as e:
+                    print(f"Warning: Failed to load cached grapheme embeddings for dim {dim_str}: {e}, recomputing...")
+                    
+            if grapheme_embeddings is None:
+                print(f"Computing grapheme embeddings for vocabulary (dim {dim_str})...")
+                grapheme_embeddings = grapheme_embedder.get_embedding(
+                    self.strings, batch_size=500, log_interval=0
+                ).detach()
+                try:
+                    print(f"Caching grapheme embeddings to {grapheme_cache_path}...")
+                    torch.save(grapheme_embeddings, grapheme_cache_path)
+                except Exception as e:
+                    print(f"Warning: Failed to cache grapheme embeddings for dim {dim_str}: {e}")
+                    
+            # 2. Phonetic vocabulary embeddings
+            phone_cache_path = cache_dir / f"phone_embeddings_cache_{dim_str}.pt"
+            phone_embeddings = None
+            if phone_cache_path.exists():
+                try:
+                    print(f"Loading phonetic embeddings for dim {dim_str} from cache: {phone_cache_path}...")
+                    cached_emb = torch.load(phone_cache_path, map_location=device, weights_only=True)
+                    if cached_emb.shape[0] == len(self.strings) and cached_emb.shape[1] == int(dim_str):
+                        phone_embeddings = cached_emb
+                    else:
+                        print(f"Warning: Cached phonetic embeddings size mismatch for dim {dim_str}, recomputing...")
+                except Exception as e:
+                    print(f"Warning: Failed to load cached phonetic embeddings for dim {dim_str}: {e}, recomputing...")
+                    
+            if phone_embeddings is None:
+                print(f"Computing phonetic embeddings for vocabulary (dim {dim_str})...")
+                valid_phones = list(phone_embedder.model.subword_to_idx.keys())
+                fallback_phone = [valid_phones[0]] if valid_phones else ["AH0"]
                 
-        print("Backend ready.")
+                prons = []
+                for word in self.strings:
+                    pron = self.cmudict.get(word.upper())
+                    if not pron:
+                        pron = [c for c in word.upper()]
+                    pron = [ph for ph in pron if ph in phone_embedder.model.subword_to_idx]
+                    if not pron:
+                        pron = fallback_phone
+                    prons.append(pron)
+                    
+                phone_embeddings = phone_embedder.get_embedding(
+                    prons, batch_size=500, log_interval=0
+                ).detach()
+                
+                try:
+                    print(f"Caching phonetic embeddings to {phone_cache_path}...")
+                    torch.save(phone_embeddings, phone_cache_path)
+                except Exception as e:
+                    print(f"Warning: Failed to cache phonetic embeddings for dim {dim_str}: {e}")
+                    
+            self.models[dim_str] = {
+                "grapheme_embedder": grapheme_embedder,
+                "phone_embedder": phone_embedder,
+                "grapheme_embeddings": grapheme_embeddings,
+                "phone_embeddings": phone_embeddings
+            }
+            
+        print(f"Backend ready with pre-cached dimensions: {list(self.models.keys())}.")
         
-    def search_and_graph(self, query_word: str, num_requested: int, embed_type: str = None):
+    def search_and_graph(self, query_word: str, num_requested: int, embed_type: str = None, dim: str = None):
         if embed_type is None:
             embed_type = FLAGS.default_embed_type
+            
+        dim_str = str(dim).strip() if dim is not None else str(FLAGS.embedding_dim).strip()
+        if dim_str not in self.models:
+            default_dim = str(FLAGS.embedding_dim).strip()
+            if default_dim in self.models:
+                dim_str = default_dim
+            elif len(self.models) > 0:
+                dim_str = list(self.models.keys())[0]
+            else:
+                raise RuntimeError("No embedding models available in search backend.")
+                
+        model_entry = self.models[dim_str]
+        grapheme_embedder = model_entry["grapheme_embedder"]
+        phone_embedder = model_entry["phone_embedder"]
+        grapheme_embeddings = model_entry["grapheme_embeddings"]
+        phone_embeddings = model_entry["phone_embeddings"]
+        
         query_word = query_word.upper()
         
         if embed_type == "phone":
             query_pron = self.cmudict.get(query_word)
             if not query_pron:
                 query_pron = [c for c in query_word]
-            query_pron = [ph for ph in query_pron if ph in self.phone_embedder.model.subword_to_idx]
+            query_pron = [ph for ph in query_pron if ph in phone_embedder.model.subword_to_idx]
             if not query_pron:
-                valid_phones = list(self.phone_embedder.model.subword_to_idx.keys())
+                valid_phones = list(phone_embedder.model.subword_to_idx.keys())
                 query_pron = [valid_phones[0]] if valid_phones else ["AH0"]
                 
-            query_emb_tensor = self.phone_embedder.get_embedding(text=[query_pron]).detach().to(device=self.device)
-            embeddings_db = self.phone_embeddings
+            query_emb_tensor = phone_embedder.get_embedding(text=[query_pron]).detach().to(device=self.device)
+            embeddings_db = phone_embeddings
         else:
-            query_emb_tensor = self.grapheme_embedder.get_embedding(text=[query_word]).detach().to(device=self.device)
-            embeddings_db = self.grapheme_embeddings
+            query_emb_tensor = grapheme_embedder.get_embedding(text=[query_word]).detach().to(device=self.device)
+            embeddings_db = grapheme_embeddings
             
         # Calculate distances to all wakewords
         l2_dist = torch.sqrt(torch.sum(torch.pow(embeddings_db - query_emb_tensor, 2.0), dim=1))
@@ -242,10 +307,14 @@ def get_backend():
 
 @app.route("/")
 def index():
+    b = get_backend()
+    cached_dims = list(b.models.keys())
     return render_template(
         "index.html",
         default_embed_type=FLAGS.default_embed_type,
-        default_neighbors=FLAGS.default_neighbors
+        default_neighbors=FLAGS.default_neighbors,
+        default_embedding_dim=str(FLAGS.embedding_dim),
+        cached_embeddings=cached_dims
     )
 
 @app.route("/api/search")
@@ -253,6 +322,7 @@ def api_search():
     word = request.args.get("word", "").strip()
     n = request.args.get("n", FLAGS.default_neighbors, type=int)
     embed_type = request.args.get("embed_type", FLAGS.default_embed_type).strip()
+    dim = request.args.get("dim", request.args.get("embedding_dim", str(FLAGS.embedding_dim))).strip()
     
     if not word:
         return jsonify({"error": "word parameter is required"}), 400
@@ -263,7 +333,7 @@ def api_search():
             import datetime
             timestamp = datetime.datetime.now().isoformat()
             client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-            log_entry = f"{timestamp}\t{client_ip}\t{word}\t{n}\t{embed_type}\n"
+            log_entry = f"{timestamp}\t{client_ip}\t{word}\t{n}\t{embed_type}\t{dim}\n"
             with open(FLAGS.query_log_file, "a", encoding="utf-8") as f:
                 f.write(log_entry)
         except Exception as e:
@@ -271,7 +341,7 @@ def api_search():
         
     try:
         b = get_backend()
-        graph_data = b.search_and_graph(word, n, embed_type)
+        graph_data = b.search_and_graph(word, n, embed_type=embed_type, dim=dim)
         return jsonify(graph_data)
     except Exception as e:
         import traceback

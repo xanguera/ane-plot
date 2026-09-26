@@ -380,6 +380,14 @@
                     <option value="phone" {% if default_embed_type == 'phone' %}selected{% endif %}>Phonetic</option>
                 </select>
             </div>
+            <div class="filter-wrapper">
+                <label for="dim-filter">Dimension:</label>
+                <select id="dim-filter">
+                    {% for d in cached_embeddings %}
+                    <option value="{{ d }}" {% if d == default_embedding_dim %}selected{% endif %}>{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <button id="search-btn">Search</button>
             <button id="about-btn" class="secondary-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
@@ -448,6 +456,8 @@
             const word = document.getElementById('word-input').value.trim();
             const n = document.getElementById('n-input').value;
             const embedType = document.getElementById('embed-filter').value;
+            const dimSelect = document.getElementById('dim-filter');
+            const dim = dimSelect ? dimSelect.value : '{{ default_embedding_dim }}';
             
             if (!word) return;
             
@@ -458,7 +468,7 @@
             
             try {
                 const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
-                const response = await fetch(`${basePath}api/search?word=${encodeURIComponent(word)}&n=${n}&embed_type=${embedType}`);
+                const response = await fetch(`${basePath}api/search?word=${encodeURIComponent(word)}&n=${n}&embed_type=${embedType}&dim=${dim}`);
                 const data = await response.json();
                 
                 if (response.ok) {
@@ -679,6 +689,8 @@
             const word = document.getElementById('word-input').value.trim();
             const n = document.getElementById('n-input').value;
             const embedType = document.getElementById('embed-filter').value;
+            const dimSelect = document.getElementById('dim-filter');
+            const dim = dimSelect ? dimSelect.value : '{{ default_embedding_dim }}';
             const links = document.getElementById('link-filter').value;
             
             const urlParams = new URLSearchParams(window.location.search);
@@ -689,6 +701,7 @@
             }
             urlParams.set('n', n);
             urlParams.set('embed_type', embedType);
+            urlParams.set('dim', dim);
             urlParams.set('links', links);
             window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
         }
@@ -709,6 +722,14 @@
         const urlEmbedType = urlParams.get('embed_type');
         if (urlEmbedType && (urlEmbedType === 'phone' || urlEmbedType === 'grapheme')) {
             document.getElementById('embed-filter').value = urlEmbedType;
+        }
+        
+        const urlDim = urlParams.get('dim') || urlParams.get('embedding_dim');
+        if (urlDim) {
+            const dimSelect = document.getElementById('dim-filter');
+            if (dimSelect && Array.from(dimSelect.options).some(opt => opt.value === urlDim)) {
+                dimSelect.value = urlDim;
+            }
         }
         
         const urlLinks = urlParams.get('links');
@@ -748,6 +769,12 @@
 
         // Trigger a new search when the embedding type changes
         document.getElementById('embed-filter').addEventListener('change', performSearch);
+        
+        // Trigger a new search when the embedding dimension changes
+        const dimFilterEl = document.getElementById('dim-filter');
+        if (dimFilterEl) {
+            dimFilterEl.addEventListener('change', performSearch);
+        }
     </script>
 </body>
 </html>
