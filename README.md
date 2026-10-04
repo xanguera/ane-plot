@@ -1,9 +1,9 @@
-# ACN Plot
+# ANE Plot
 A web application for exploring the phonetic relationships between words using Apple's [Acoustic Neighbor Embeddings](https://github.com/apple/ml-acn-embed). It takes in a word and outputs its $n$ nearest phonetic neighbors as an interactive 2D edge-weighted graph
 
 ## Key Components:
 
-- **Acoustic Embeddings**: Utilizes Apple's [Acoustic Neighbor Embeddings (ACN)](https://github.com/apple/ml-acn-embed) to map words into a high-dimensional space where similar-sounding words are closer together. There is a setting at the top of the page for the dimensionality of the global embedding.
+- **Acoustic Embeddings**: Utilizes Woojay Jeon's (@Apple) [Acoustic Neighbor Embeddings (ACN)](https://github.com/apple/ml-acn-embed) to map words into a high-dimensional space where similar-sounding words are closer together. There is a setting at the top of the page for the dimensionality of the global embedding.
 - **t-SNE Projection**: Applies [t-Distributed Stochastic Neighbor Embedding (t-SNE)](https://en.wikipedia.org/wiki/T-distributed_stochastic_neighbor_embedding) to reduce the high-dimensional embeddings into a 2D layout. We get the best results with a large global embedding, choose the neighborhood words, and then reduce to 2D for display.
 - **Interactive Graph**: Renders query words and their nearest acoustic neighbors using D3.js. Hover over nodes to inspect individual similarity distances.
 
