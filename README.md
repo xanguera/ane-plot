@@ -8,7 +8,7 @@ A web application for exploring the phonetic relationships between words using A
 - **Interactive Graph**: Renders query words and their nearest acoustic neighbors using D3.js. Hover over nodes to inspect individual similarity distances.
 - **Pronunciation**: Hovering over a word reads it aloud with the browser's built-in text-to-speech. Pick the voice from the "Voice" menu; the page picks a good English voice by default and remembers your choice. Browsers only play sound after you click on the page, so until then the speaker button asks for a click. After that it mutes and unmutes pronunciation.
 
-![Example](ANE_Example_Hello.png)
+![Example](ANE_Example_House.png)
 
 There is a version running at [https://quickin.stanford.edu/ane](https://quicksin.stanford.edu/ane)
 ## Setup
