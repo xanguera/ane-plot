@@ -45,6 +45,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 1rem;
             z-index: 10;
         }
 
@@ -57,6 +58,8 @@
 
         .controls {
             display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
             gap: 1rem;
             align-items: center;
         }
@@ -153,6 +156,11 @@
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.2);
             color: var(--text-color);
+        }
+
+        .sound-locked {
+            border-color: var(--primary);
+            color: var(--primary);
         }
 
         .secondary-btn:hover {
@@ -399,6 +407,11 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="filter-wrapper">
+                <label for="voice-filter">Voice:</label>
+                <select id="voice-filter" style="max-width: 200px;"></select>
+                <button id="sound-btn" class="secondary-btn"></button>
+            </div>
             <button id="search-btn">Search</button>
             <button id="about-btn" class="secondary-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -416,7 +429,7 @@
         <svg id="viz"></svg>
         <div id="loading">
             <div class="spinner"></div>
-            <div>Computing t-SNE...</div>
+            <div>Computing layout...</div>
         </div>
         <div class="tooltip" id="tooltip"></div>
     </div>
@@ -439,11 +452,10 @@
                         to map words into a high-dimensional space where similar-sounding words are closer together.
                         There is a setting at the top of the page for the dimensionality of the global embedding.
                     </li>
-                    <li><strong>t-SNE Projection:</strong> Applies t-Distributed Stochastic Neighbor Embedding (t-SNE)
-                        to reduce
-                        the high-dimensional embeddings into a 2D layout. We get the best results with a large global
-                        embedding,
-                        choose the neighborhood words, and then reduce to 2D for display.</li>
+                    <li><strong>Radial Layout:</strong> The query word sits in the centre and each neighbor
+                        sits at its true embedding distance from it, so the length of each query link is to scale.
+                        The direction of each neighbor comes from a PCA projection, which keeps similar-sounding
+                        neighbors on the same side. Links between two neighbors (Full graph) are only approximate.</li>
                     <li><strong>Interactive Graph:</strong> Renders query words and their nearest acoustic neighbors
                         using D3.js. Hover over nodes to inspect individual similarity distances.</li>
                 </ul>
@@ -480,6 +492,125 @@
         const g = svg.append("g");
         const linkGroup = g.append("g").attr("class", "links");
         const nodeGroup = g.append("g").attr("class", "nodes");
+
+        // Speak a word with the browser's built-in text-to-speech.
+        // Voices load asynchronously in some browsers, so pick one lazily.
+        // Voice lists differ per browser and OS, and the first English voice
+        // is often a robotic or novelty one (e.g. macOS "Albert"), so rank them.
+        let englishVoice = null;
+        function voiceScore(v) {
+            const name = v.name;
+            if (/premium|enhanced|natural|neural|siri/i.test(name)) return 4;
+            if (/^Google US English$/.test(name)) return 3;
+            if (/samantha|alex|ava|zoe|allison|aria|jenny|guy|daniel|karen|moira|google/i.test(name)) return 2;
+            return v.localService ? 1 : 0;
+        }
+        const voiceSelect = document.getElementById('voice-filter');
+        const VOICE_STORAGE_KEY = 'ttsVoice';
+        let englishVoices = [];
+
+        function savedVoiceName() {
+            try { return localStorage.getItem(VOICE_STORAGE_KEY); } catch (e) { return null; }
+        }
+
+        // Fill the voice dropdown, best-ranked first. Keep the user's saved
+        // choice if that voice still exists, otherwise use the best one.
+        function loadVoices() {
+            const isUS = v => v.lang.replace('_', '-') === 'en-US';
+            englishVoices = window.speechSynthesis.getVoices()
+                .filter(v => v.lang.replace('_', '-').startsWith('en'))
+                .sort((a, b) => voiceScore(b) - voiceScore(a) || isUS(b) - isUS(a) || a.name.localeCompare(b.name));
+
+            voiceSelect.innerHTML = '';
+            englishVoices.forEach(v => voiceSelect.add(new Option(`${v.name} (${v.lang})`, v.name)));
+
+            englishVoice = englishVoices.find(v => v.name === savedVoiceName()) || englishVoices[0] || null;
+            if (englishVoice) voiceSelect.value = englishVoice.name;
+            voiceSelect.disabled = englishVoices.length === 0;
+        }
+
+        voiceSelect.addEventListener('change', () => {
+            englishVoice = englishVoices.find(v => v.name === voiceSelect.value) || null;
+            try { localStorage.setItem(VOICE_STORAGE_KEY, voiceSelect.value); } catch (e) { }
+            // Play a sample so the user hears the new voice right away
+            speakWord('hello');
+        });
+
+        if ('speechSynthesis' in window) {
+            loadVoices();
+            window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+        } else {
+            voiceSelect.disabled = true;
+        }
+
+        // Browsers only allow sound after the visitor has clicked, tapped or
+        // typed on the page (hovering doesn't count). Until then, the sound
+        // button asks for a click; any click on the page unlocks it. After
+        // that it is a plain on/off toggle, remembered across visits.
+        const soundBtn = document.getElementById('sound-btn');
+        const SOUND_STORAGE_KEY = 'ttsMuted';
+        let soundOn = true;
+        try { soundOn = localStorage.getItem(SOUND_STORAGE_KEY) !== '1'; } catch (e) { }
+
+        // Browsers without the userActivation API (older Firefox) don't block speech
+        const soundUnlocked = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
+
+        const SPEAKER_ON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
+        const SPEAKER_OFF = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>';
+
+        function updateSoundBtn() {
+            if (!('speechSynthesis' in window)) {
+                soundBtn.style.display = 'none';
+                return;
+            }
+            const locked = !soundUnlocked();
+            soundBtn.classList.toggle('sound-locked', locked);
+            if (locked) {
+                soundBtn.innerHTML = SPEAKER_OFF + ' Click to enable pronunciation';
+                soundBtn.title = 'Your browser plays sound only after you click the page';
+            } else {
+                soundBtn.innerHTML = soundOn ? SPEAKER_ON : SPEAKER_OFF;
+                soundBtn.title = soundOn ? 'Pronunciation on (click to mute)' : 'Pronunciation off (click to unmute)';
+            }
+        }
+
+        soundBtn.addEventListener('click', () => {
+            if (soundBtn.classList.contains('sound-locked')) {
+                // This click is what unlocks sound; turn it on rather than toggling
+                soundOn = true;
+            } else {
+                soundOn = !soundOn;
+                if (!soundOn) window.speechSynthesis.cancel();
+            }
+            try { localStorage.setItem(SOUND_STORAGE_KEY, soundOn ? '0' : '1'); } catch (e) { }
+            updateSoundBtn();
+        });
+
+        // Any other click or key press on the page also unlocks sound. Clicks on
+        // the sound button are left to its own handler above.
+        function onFirstInteraction(event) {
+            if (soundBtn.contains(event.target)) return;
+            document.removeEventListener('click', onFirstInteraction, true);
+            document.removeEventListener('keydown', onFirstInteraction, true);
+            updateSoundBtn();
+        }
+        if (!soundUnlocked()) {
+            document.addEventListener('click', onFirstInteraction, true);
+            document.addEventListener('keydown', onFirstInteraction, true);
+        }
+        updateSoundBtn();
+
+        function speakWord(word) {
+            if (!('speechSynthesis' in window) || !soundOn) return;
+            // Stop any word still playing so quick hovers don't queue up
+            window.speechSynthesis.cancel();
+            // Dictionary words are uppercase; lowercase them so voices
+            // don't spell them out letter by letter as acronyms
+            const utterance = new SpeechSynthesisUtterance(word.toLowerCase());
+            utterance.lang = 'en-US';
+            if (englishVoice) utterance.voice = englishVoice;
+            window.speechSynthesis.speak(utterance);
+        }
 
         document.getElementById('search-btn').addEventListener('click', performSearch);
         document.getElementById('word-input').addEventListener('keypress', (e) => {
@@ -542,72 +673,122 @@
                 edges = [];
             }
 
-            // Normalize t-SNE coordinates to fit nicely on screen
-            const xExtent = d3.extent(nodes, d => d.x);
-            const yExtent = d3.extent(nodes, d => d.y);
+            // The backend puts the query at (0, 0) and each neighbor at its true
+            // distance from it. Use one scale for both axes so lengths stay
+            // proportional, and centre the query on screen.
+            const padding = 60;
+            const cx = width / 2;
+            const cy = height / 2;
+            const maxRadius = d3.max(nodes, d => Math.hypot(d.x, d.y)) || 1;
+            const fitScale = Math.max(1, Math.min(width, height) / 2 - padding) / maxRadius;
 
-            // Add padding
-            const padding = 100;
-            const xScale = d3.scaleLinear()
-                .domain(xExtent)
-                .range([padding, width - padding]);
+            // Each node plus its label is treated as one circle for collision.
+            // Labels sit below the node, so that circle is shifted down a little.
+            const labelOffset = d => d.is_query ? 12 : 9;
+            const collideRadius = d => {
+                const textWidth = d.id.length * (d.is_query ? 9 : 7.5);
+                return Math.max(d.is_query ? 42 : 29, textWidth / 2 + 6);
+            };
+            // Keep neighbors clear of the query node, even at distance ~0 (homophones)
+            const minOrbit = d3.max(nodes, d => d.is_query ? collideRadius(d) : 0) + 34;
 
-            const yScale = d3.scaleLinear()
-                .domain(yExtent)
-                .range([padding, height - padding]);
+            // Neighbors may only slide along their orbit (the circle at their true
+            // distance), so the length of each query link stays exact. Push them
+            // apart until nothing overlaps. If the orbits are too crowded for that,
+            // spread them out and let the zoom below fit everything on screen.
+            function layoutAtScale(scale) {
+                nodes.forEach(n => {
+                    n.orbit = n.is_query ? 0 : Math.max(minOrbit, Math.hypot(n.x, n.y) * scale);
+                    const angle = Math.atan2(n.y, n.x);
+                    n.px = cx + n.orbit * Math.cos(angle);
+                    n.py = cy + n.orbit * Math.sin(angle);
+                });
 
-            // If only 1 node, put it in center
-            if (nodes.length === 1) {
-                xScale.domain([-1, 1]).range([0, width]);
-                yScale.domain([-1, 1]).range([0, height]);
-            }
+                const simNodes = nodes.map(n => ({
+                    node: n,
+                    x: n.px,
+                    y: n.py + labelOffset(n),
+                    fx: n.is_query ? n.px : undefined,
+                    fy: n.is_query ? n.py + labelOffset(n) : undefined,
+                }));
+                const sim = d3.forceSimulation(simNodes)
+                    .force("collide", d3.forceCollide(d => collideRadius(d.node) + 2).iterations(4))
+                    .stop();
 
-            nodes.forEach(n => {
-                n.px = xScale(n.x);
-                n.py = yScale(n.y);
-            });
-
-            // Separate overlapping nodes (e.g. homophones with identical coordinates)
-            const coordinateGroups = [];
-            nodes.forEach(n => {
-                let group = coordinateGroups.find(g =>
-                    Math.abs(g.center_x - n.px) < 1.0 && Math.abs(g.center_y - n.py) < 1.0
-                );
-                if (group) {
-                    group.nodes.push(n);
-                } else {
-                    coordinateGroups.push({
-                        center_x: n.px,
-                        center_y: n.py,
-                        nodes: [n]
+                for (let i = 0; i < 300; i++) {
+                    sim.tick();
+                    simNodes.forEach(s => {
+                        if (s.node.is_query) return;
+                        const dx = s.x - cx;
+                        const dy = s.y - labelOffset(s.node) - cy;
+                        // Coincident with the centre: pick any direction
+                        const angle = (dx || dy) ? Math.atan2(dy, dx) : Math.random() * 2 * Math.PI;
+                        s.x = cx + s.node.orbit * Math.cos(angle);
+                        s.y = cy + s.node.orbit * Math.sin(angle) + labelOffset(s.node);
                     });
                 }
-            });
 
-            coordinateGroups.forEach(group => {
-                const m = group.nodes.length;
-                if (m > 1) {
-                    // Place the query node at the beginning if present
-                    group.nodes.sort((a, b) => (b.is_query ? 1 : 0) - (a.is_query ? 1 : 0));
+                simNodes.forEach(s => {
+                    s.node.px = s.x;
+                    s.node.py = s.y - labelOffset(s.node);
+                });
 
-                    const radius = 35; // separation radius in pixels
-                    if (group.nodes[0].is_query) {
-                        // Keep query node at the center, distribute neighbors around it
-                        for (let j = 1; j < m; j++) {
-                            const angle = (2 * Math.PI * (j - 1)) / (m - 1);
-                            group.nodes[j].px = group.center_x + radius * Math.cos(angle);
-                            group.nodes[j].py = group.center_y + radius * Math.sin(angle);
-                        }
-                    } else {
-                        // Distribute all nodes evenly in a circle
-                        for (let j = 0; j < m; j++) {
-                            const angle = (2 * Math.PI * j) / m;
-                            group.nodes[j].px = group.center_x + radius * Math.cos(angle);
-                            group.nodes[j].py = group.center_y + radius * Math.sin(angle);
+                // Does anything still overlap?
+                for (let i = 0; i < simNodes.length; i++) {
+                    for (let j = i + 1; j < simNodes.length; j++) {
+                        const a = simNodes[i], b = simNodes[j];
+                        if (Math.hypot(a.x - b.x, a.y - b.y) < collideRadius(a.node) + collideRadius(b.node)) {
+                            return false;
                         }
                     }
                 }
-            });
+                return true;
+            }
+
+            let scale = fitScale;
+            for (let attempt = 0; attempt < 8 && !layoutAtScale(scale); attempt++) {
+                scale *= 1.25;
+            }
+
+            // Distance rings at a few round values (e.g. 0.2, 0.4, 0.6), labelled,
+            // so you can read a neighbor's distance off the plot
+            const ringDistances = d3.scaleLinear().domain([0, maxRadius]).ticks(4).filter(t => t > 0);
+            const rings = linkGroup.selectAll("g.ring")
+                .data(ringDistances)
+                .join("g")
+                .attr("class", "ring")
+                .style("pointer-events", "none");
+            rings.append("circle")
+                .attr("cx", cx)
+                .attr("cy", cy)
+                .attr("r", t => t * scale)
+                .style("fill", "none")
+                .style("stroke", "var(--edge-color)")
+                .style("stroke-width", 1.5)
+                .style("stroke-dasharray", "4 4")
+                .style("opacity", 0.6);
+            // Put the ring labels in the direction farthest from any neighbor,
+            // so they don't sit under a node or a link
+            const neighborAngles = nodes.filter(n => !n.is_query).map(n => Math.atan2(n.py - cy, n.px - cx));
+            const angularGap = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+            const labelAngle = d3.range(0, 360, 10)
+                .map(deg => deg * Math.PI / 180)
+                .reduce((best, a) => {
+                    const gap = d3.min(neighborAngles, b => angularGap(a, b)) ?? Math.PI;
+                    return gap > best.gap ? { angle: a, gap } : best;
+                }, { angle: -Math.PI / 2, gap: -1 }).angle;
+            rings.append("text")
+                .attr("x", t => cx + t * scale * Math.cos(labelAngle))
+                .attr("y", t => cy + t * scale * Math.sin(labelAngle))
+                .attr("dy", "0.35em")
+                .attr("text-anchor", "middle")
+                .style("paint-order", "stroke")
+                .style("stroke", "var(--bg-color, #0f172a)")
+                .style("stroke-width", 4)
+                .text(t => t)
+                .style("fill", "var(--text-color)")
+                .style("font-size", "10px")
+                .style("opacity", 0.6);
 
             // Draw edges
             const maxWeight = d3.max(edges, d => d.weight) || 1;
@@ -660,6 +841,8 @@
                 .style("stroke-width", 2)
                 .style("cursor", "pointer")
                 .on("mouseover", (event, d) => {
+                    speakWord(d.id);
+
                     d3.select(event.currentTarget)
                         .transition()
                         .duration(200)
@@ -712,9 +895,10 @@
                 .style("text-shadow", "0px 2px 4px rgba(0,0,0,0.8)");
 
             // Auto fit to screen
+            const k = Math.min(1, fitScale / scale);
             svg.transition().duration(750).call(
                 zoom.transform,
-                d3.zoomIdentity
+                d3.zoomIdentity.translate(cx * (1 - k), cy * (1 - k)).scale(k)
             );
         }
 
