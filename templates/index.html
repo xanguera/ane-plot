@@ -392,6 +392,13 @@
                 </select>
             </div>
             <div class="filter-wrapper">
+                <label for="layout-filter">Layout:</label>
+                <select id="layout-filter">
+                    <option value="tsne" selected>Clusters (t-SNE)</option>
+                    <option value="radial">Distance (radial)</option>
+                </select>
+            </div>
+            <div class="filter-wrapper">
                 <label for="embed-filter">Embedding:</label>
                 <select id="embed-filter">
                     <option value="grapheme" {% if default_embed_type=='grapheme' %}selected{% endif %}>Grapheme
@@ -429,7 +436,7 @@
         <svg id="viz"></svg>
         <div id="loading">
             <div class="spinner"></div>
-            <div>Computing layout...</div>
+            <div>Computing t-SNE...</div>
         </div>
         <div class="tooltip" id="tooltip"></div>
     </div>
@@ -452,10 +459,15 @@
                         to map words into a high-dimensional space where similar-sounding words are closer together.
                         There is a setting at the top of the page for the dimensionality of the global embedding.
                     </li>
-                    <li><strong>Radial Layout:</strong> The query word sits in the centre and each neighbor
-                        sits at its true embedding distance from it, so the length of each query link is to scale.
-                        The direction of each neighbor comes from a PCA projection, which keeps similar-sounding
-                        neighbors on the same side. Links between two neighbors (Full graph) are only approximate.</li>
+                    <li><strong>t-SNE Projection:</strong> Applies t-Distributed Stochastic Neighbor Embedding (t-SNE)
+                        to reduce
+                        the high-dimensional embeddings into a 2D layout. We get the best results with a large global
+                        embedding,
+                        choose the neighborhood words, and then reduce to 2D for display.</li>
+                    <li><strong>Distance Layout (optional):</strong> Choose "Distance (radial)" in the Layout menu
+                        to put the query word in the centre and each neighbor at its true embedding distance, with
+                        dashed rings marking round distances. It shows exact distances to the query and works best
+                        with few neighbors; t-SNE is better for seeing which neighbors sound like each other.</li>
                     <li><strong>Interactive Graph:</strong> Renders query words and their nearest acoustic neighbors
                         using D3.js. Hover over nodes to inspect individual similarity distances.</li>
                 </ul>
@@ -650,36 +662,89 @@
             }
         }
 
-        function renderGraph(data) {
-            if (!data) return;
+        // "Clusters (t-SNE)" layout: the original layout, which shows which
+        // neighbors sound like each other. Returns the initial zoom.
+        function layoutTsne(nodes, width, height) {
+            // Normalize t-SNE coordinates to fit nicely on screen
+            const xExtent = d3.extent(nodes, d => d.x);
+            const yExtent = d3.extent(nodes, d => d.y);
 
-            const width = container.clientWidth;
-            const height = container.clientHeight;
+            // Add padding
+            const padding = 100;
+            const xScale = d3.scaleLinear()
+                .domain(xExtent)
+                .range([padding, width - padding]);
 
-            linkGroup.selectAll("*").remove();
-            nodeGroup.selectAll("*").remove();
+            const yScale = d3.scaleLinear()
+                .domain(yExtent)
+                .range([padding, height - padding]);
 
-            const nodes = data.nodes;
-
-            // Filter edges based on user selection
-            const filterValue = document.getElementById('link-filter').value;
-            const queryNode = nodes.find(n => n.is_query);
-            const queryId = queryNode ? queryNode.id : null;
-
-            let edges = data.edges;
-            if (filterValue === 'query') {
-                edges = data.edges.filter(d => d.source === queryId || d.target === queryId);
-            } else if (filterValue === 'none') {
-                edges = [];
+            // If only 1 node, put it in center
+            if (nodes.length === 1) {
+                xScale.domain([-1, 1]).range([0, width]);
+                yScale.domain([-1, 1]).range([0, height]);
             }
 
+            nodes.forEach(n => {
+                n.px = xScale(n.x);
+                n.py = yScale(n.y);
+            });
+
+            // Separate overlapping nodes (e.g. homophones with identical coordinates)
+            const coordinateGroups = [];
+            nodes.forEach(n => {
+                let group = coordinateGroups.find(g =>
+                    Math.abs(g.center_x - n.px) < 1.0 && Math.abs(g.center_y - n.py) < 1.0
+                );
+                if (group) {
+                    group.nodes.push(n);
+                } else {
+                    coordinateGroups.push({
+                        center_x: n.px,
+                        center_y: n.py,
+                        nodes: [n]
+                    });
+                }
+            });
+
+            coordinateGroups.forEach(group => {
+                const m = group.nodes.length;
+                if (m > 1) {
+                    // Place the query node at the beginning if present
+                    group.nodes.sort((a, b) => (b.is_query ? 1 : 0) - (a.is_query ? 1 : 0));
+
+                    const radius = 35; // separation radius in pixels
+                    if (group.nodes[0].is_query) {
+                        // Keep query node at the center, distribute neighbors around it
+                        for (let j = 1; j < m; j++) {
+                            const angle = (2 * Math.PI * (j - 1)) / (m - 1);
+                            group.nodes[j].px = group.center_x + radius * Math.cos(angle);
+                            group.nodes[j].py = group.center_y + radius * Math.sin(angle);
+                        }
+                    } else {
+                        // Distribute all nodes evenly in a circle
+                        for (let j = 0; j < m; j++) {
+                            const angle = (2 * Math.PI * j) / m;
+                            group.nodes[j].px = group.center_x + radius * Math.cos(angle);
+                            group.nodes[j].py = group.center_y + radius * Math.sin(angle);
+                        }
+                    }
+                }
+            });
+
+            return d3.zoomIdentity;
+        }
+
+        // "Distance (radial)" layout: link length to the query is to scale.
+        // Draws distance rings into linkGroup and returns the initial zoom.
+        function layoutRadial(nodes, width, height) {
             // The backend puts the query at (0, 0) and each neighbor at its true
-            // distance from it. Use one scale for both axes so lengths stay
+            // distance from it (rx/ry). Use one scale for both axes so lengths stay
             // proportional, and centre the query on screen.
             const padding = 60;
             const cx = width / 2;
             const cy = height / 2;
-            const maxRadius = d3.max(nodes, d => Math.hypot(d.x, d.y)) || 1;
+            const maxRadius = d3.max(nodes, d => Math.hypot(d.rx, d.ry)) || 1;
             const fitScale = Math.max(1, Math.min(width, height) / 2 - padding) / maxRadius;
 
             // Each node plus its label is treated as one circle for collision.
@@ -698,8 +763,8 @@
             // spread them out and let the zoom below fit everything on screen.
             function layoutAtScale(scale) {
                 nodes.forEach(n => {
-                    n.orbit = n.is_query ? 0 : Math.max(minOrbit, Math.hypot(n.x, n.y) * scale);
-                    const angle = Math.atan2(n.y, n.x);
+                    n.orbit = n.is_query ? 0 : Math.max(minOrbit, Math.hypot(n.rx, n.ry) * scale);
+                    const angle = Math.atan2(n.ry, n.rx);
                     n.px = cx + n.orbit * Math.cos(angle);
                     n.py = cy + n.orbit * Math.sin(angle);
                 });
@@ -789,6 +854,39 @@
                 .style("fill", "var(--text-color)")
                 .style("font-size", "10px")
                 .style("opacity", 0.6);
+
+            const k = Math.min(1, fitScale / scale);
+            return d3.zoomIdentity.translate(cx * (1 - k), cy * (1 - k)).scale(k);
+        }
+
+        function renderGraph(data) {
+            if (!data) return;
+
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            linkGroup.selectAll("*").remove();
+            nodeGroup.selectAll("*").remove();
+
+            const nodes = data.nodes;
+
+            // Filter edges based on user selection
+            const filterValue = document.getElementById('link-filter').value;
+            const queryNode = nodes.find(n => n.is_query);
+            const queryId = queryNode ? queryNode.id : null;
+
+            let edges = data.edges;
+            if (filterValue === 'query') {
+                edges = data.edges.filter(d => d.source === queryId || d.target === queryId);
+            } else if (filterValue === 'none') {
+                edges = [];
+            }
+
+            // Position nodes (sets px/py) with the chosen layout
+            const layout = document.getElementById('layout-filter').value;
+            const initialTransform = layout === 'radial'
+                ? layoutRadial(nodes, width, height)
+                : layoutTsne(nodes, width, height);
 
             // Draw edges
             const maxWeight = d3.max(edges, d => d.weight) || 1;
@@ -895,10 +993,9 @@
                 .style("text-shadow", "0px 2px 4px rgba(0,0,0,0.8)");
 
             // Auto fit to screen
-            const k = Math.min(1, fitScale / scale);
             svg.transition().duration(750).call(
                 zoom.transform,
-                d3.zoomIdentity.translate(cx * (1 - k), cy * (1 - k)).scale(k)
+                initialTransform
             );
         }
 
@@ -910,6 +1007,7 @@
             const dimSelect = document.getElementById('dim-filter');
             const dim = dimSelect ? dimSelect.value : '{{ default_embedding_dim }}';
             const links = document.getElementById('link-filter').value;
+            const layout = document.getElementById('layout-filter').value;
 
             const urlParams = new URLSearchParams(window.location.search);
             if (word) {
@@ -921,6 +1019,7 @@
             urlParams.set('embed_type', embedType);
             urlParams.set('dim', dim);
             urlParams.set('links', links);
+            urlParams.set('layout', layout);
             window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
         }
 
@@ -955,6 +1054,11 @@
             document.getElementById('link-filter').value = urlLinks;
         }
 
+        const urlLayout = urlParams.get('layout');
+        if (urlLayout === 'tsne' || urlLayout === 'radial') {
+            document.getElementById('layout-filter').value = urlLayout;
+        }
+
         // Initial search to populate graph
         performSearch();
 
@@ -979,6 +1083,14 @@
 
         // Re-render graph when the link visibility filter changes
         document.getElementById('link-filter').addEventListener('change', () => {
+            syncUrlParams();
+            if (currentGraphData) {
+                renderGraph(currentGraphData);
+            }
+        });
+
+        // Re-render graph when the layout changes (both layouts come with each search)
+        document.getElementById('layout-filter').addEventListener('change', () => {
             syncUrlParams();
             if (currentGraphData) {
                 renderGraph(currentGraphData);
