@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from flask import Flask, jsonify, request, render_template
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 from acn_embed.embed.embedder.text_embedder import TextEmbedder
 
@@ -262,30 +263,43 @@ class NNSearchBackend:
         for n in neighbors:
             nodes.append({"id": n["word"], "is_query": False, "dist_to_query": n["distance"]})
             
-        # Prepare embeddings for the 2D layout
+        # Prepare embeddings for t-SNE
         all_embeddings = [query_emb_tensor.cpu().numpy()[0]] + [n["embedding"] for n in neighbors]
         X = np.array(all_embeddings)
+        
+        # Run t-SNE to get 2D positions
         n_samples = X.shape[0]
-
-        # Radial layout: the query sits at the origin and each neighbor sits at
-        # its true embedding distance from it, so query links are drawn to scale.
-        # Only the direction comes from a projection (PCA), which keeps similar
-        # neighbors on the same side. A 2D projection alone (e.g. t-SNE) cannot
-        # preserve distances.
-        if n_samples > 2:
-            X_2d = PCA(n_components=2).fit_transform(X)
+        perplexity = min(5.0, n_samples - 1.0) if n_samples > 1 else 1.0
+        
+        tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42, init='pca', learning_rate='auto')
+        if n_samples > 1:
+            X_2d = tsne.fit_transform(X)
         else:
-            X_2d = np.zeros((n_samples, 2))
-            X_2d[1:, 0] = 1.0
-        offsets = X_2d - X_2d[0]
+            X_2d = np.zeros((1, 2))
+            
+        for i, node in enumerate(nodes):
+            node["x"] = float(X_2d[i, 0])
+            node["y"] = float(X_2d[i, 1])
+            
+        # Second layout, "radial": the query sits at the origin and each neighbor
+        # sits at its true embedding distance from it, so query links are drawn
+        # to scale. Only the direction comes from a projection (PCA), which keeps
+        # similar neighbors on the same side. Stored as rx/ry next to the t-SNE x/y
+        # so the page can switch layouts without a new search.
+        if n_samples > 2:
+            X_pca = PCA(n_components=2).fit_transform(X)
+        else:
+            X_pca = np.zeros((n_samples, 2))
+            X_pca[1:, 0] = 1.0
+        offsets = X_pca - X_pca[0]
         angles = np.arctan2(offsets[:, 1], offsets[:, 0])
 
-        nodes[0]["x"] = 0.0
-        nodes[0]["y"] = 0.0
+        nodes[0]["rx"] = 0.0
+        nodes[0]["ry"] = 0.0
         for i in range(1, n_samples):
             radius = nodes[i]["dist_to_query"]
-            nodes[i]["x"] = float(radius * np.cos(angles[i]))
-            nodes[i]["y"] = float(radius * np.sin(angles[i]))
+            nodes[i]["rx"] = float(radius * np.cos(angles[i]))
+            nodes[i]["ry"] = float(radius * np.sin(angles[i]))
 
         # Compute edges (fully connected graph based on pairwise distances)
         edges = []
